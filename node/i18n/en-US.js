@@ -377,8 +377,6 @@ module.exports = {
 
   "upload.emptyfolder": "Allow uploading empty folder",
   "upload.emptyfolder.disabled": "Prohibit uploading empty folder",
-  "upload.overwrite": "Enable overwrite for uploading",
-  "upload.overwrite.disabled": "Disable overwrite for uploading",
   "download.overwrite": "Enable overwrite for downloading",
   "download.overwrite.disabled": "Disable overwrite for downloading",
   "start.all": "Start All",

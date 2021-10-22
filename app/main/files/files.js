@@ -1214,6 +1214,33 @@ angular.module("web").controller("filesCtrl", [
       }).result.then(angular.noop, angular.noop);
     }
 
+    function showUploadConfirmModal(filePaths) {
+      $modal.open({
+        templateUrl: "main/files/modals/upload-confirm-modal.html",
+        controller: "uploadConfirmModalCtrl",
+        resolve: {
+          items: () => {
+            return filePaths;
+          },
+          currentInfo: () => {
+            return angular.copy($scope.currentInfo);
+          },
+          qiniuClientOpt: () => {
+            return getQiniuClientOpt();
+          },
+          okCallback: () => {
+            return ({ files, uploadOptions }) => {
+              $scope.handlers.uploadFilesHandler(
+                files.map(qiniuPath.fromLocalPath),
+                angular.copy($scope.currentInfo),
+                uploadOptions,
+              );
+            }
+          }
+        }
+      }).result.then(angular.noop, angular.noop);
+    }
+
     ////////////////////////
     function selectBucket(item) {
       if ($scope.bucket_sel === item) {
@@ -1325,7 +1352,7 @@ angular.module("web").controller("filesCtrl", [
           return;
         }
 
-        $scope.handlers.uploadFilesHandler(filePaths.map(qiniuPath.fromLocalPath), angular.copy($scope.currentInfo));
+        showUploadConfirmModal(filePaths)
       });
     }
 

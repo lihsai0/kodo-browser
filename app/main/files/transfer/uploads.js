@@ -61,11 +61,6 @@ angular.module("web").controller("transferUploadsCtrl", [
       localStorage.setItem(Const.EMPTY_FOLDER_UPLOADING, $scope.emptyFolderUploading.enabled);
     }
 
-    function triggerOverwriting() {
-      $scope.overwriteUploading.enabled = !$scope.overwriteUploading.enabled;
-      localStorage.setItem(Const.OVERWRITE_UPLOADING, $scope.overwriteUploading.enabled);
-    }
-
     function checkStartJob(item, force) {
       if (force) {
         item.start(true);

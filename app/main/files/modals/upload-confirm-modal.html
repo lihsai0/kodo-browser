@@ -1,0 +1,70 @@
+<div class="modal-header">
+    <button type="button" class="close" ng-click="cancel()">
+        <span aria-hidden="true">&times;</span>
+    </button>
+    <h4 class="modal-title text-info">
+        <i class="glyphicon glyphicon-cloud-upload text-info"></i>
+        {{'uploadModal.title'|translate}}
+    </h4>
+</div>
+<div class="modal-body">
+    <div class="container-fluid">
+        <div>
+            {{'uploadModal.selectedFilesTitle'|translate}}
+        </div>
+        <div style="overflow: auto">
+            <ul style="max-height: 300px;">
+                <li ng-repeat="file in showFiles">
+                    <span class="icon" ng-style="{'color': file.isDir ? '#ffa500' : 'inherit'}" role="img">
+                        <i class="fa" ng-class="{'fa-folder': file.isDir, 'fa-file-o': !file.isDir}"></i>
+                    </span>
+                    <span class="file-name">
+                        {{file.isDir ? file.path : file.basename}}
+                    </span>
+                </li>
+                <li ng-if="files.length > maxShowFiles">...（{{files.length}} {{'uploadModal.maxShowFilesHelper'|translate}}）</li>
+            </ul>
+        </div>
+        <form class="form-horizontal" name="uploadConfirmForm">
+            <div class="form-group">
+                <span class="col-sm-2 control-label">{{'uploadModal.ifCoverUpload'|translate}}</span>
+                <div class="col-sm-8">
+                    <label class="control-label">
+                        <input type="checkbox" ng-model="uploadConfirmFormData.isOverwrite">
+                        <span>{{'uploadModal.ifCoverUploadHelper'|translate}}</span>
+                    </label>
+                </div>
+            </div>
+            <div class="form-group">
+                <span class="col-sm-2 control-label">{{'storageClassesType'|translate}}</span>
+                <div class="col-sm-10">
+                    <label class="control-label">
+                        <input type="radio" name="inlineRadioOptions" ng-model="uploadConfirmFormData.storageClassName" value="Standard">
+                        {{'storageClassesType.standard'|translate}}
+                    </label>
+                    <label class="control-label">
+                        <input type="radio" name="inlineRadioOptions" ng-model="uploadConfirmFormData.storageClassName" value="InfrequentAccess">
+                        {{'storageClassesType.infrequentaccess'|translate}}
+                    </label>
+                    <label class="control-label">
+                        <input type="radio" name="inlineRadioOptions" ng-model="uploadConfirmFormData.storageClassName" value="Glacier">
+                        {{'storageClassesType.glacier'|translate}}
+                    </label>
+                    <span class="help-block" style="font-size: 0.8em;min-height: 1.3em;">{{uploadConfirmFormHelper.storageClassesType}}</span>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="modal-footer">
+    <button ng-disabled="isLoading" type="button"
+            ng-click="ok()"
+            class="btn btn-success btn-sm">
+        <i class="glyphicon glyphicon-ok"></i>
+        {{'uploadModal.ok'|translate}}
+    </button>
+    <button type="button" class="btn btn-default btn-sm" ng-click="cancel()">
+        <i class="glyphicon glyphicon-remove"></i>
+        {{'cancel'|translate}}
+    </button>
+</div>
