@@ -43,9 +43,9 @@ angular.module('web')
         cancel: cancel,
       })
 
-      $scope.$watch('uploadConfirmFormData.storageClassesType', function () {
+      $scope.$watch('uploadConfirmFormData.storageClassName', function () {
         $scope.uploadConfirmFormHelper.storageClassesType =
-          T(`uploadModal.storageClassesHelper.${$scope.uploadConfirmFormData.storageClassesType}`)
+          T(`uploadModal.storageClassesHelper.${$scope.uploadConfirmFormData.storageClassName}`)
       })
 
       function ok() {

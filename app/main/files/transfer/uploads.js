@@ -25,7 +25,6 @@ angular.module("web").controller("transferUploadsCtrl", [
 
     angular.extend($scope, {
       triggerEmptyFolder: triggerEmptyFolder,
-      triggerOverwriting: triggerOverwriting,
       showRemoveItem: showRemoveItem,
       clearAllCompleted: clearAllCompleted,
       clearAll: clearAll,
