@@ -13,6 +13,7 @@ import {
 
 EventEmitter.prototype._maxListeners = 1000
 
+// TODO: make this file typescript
 class Client {
   constructor(clientOptions, options) {
     options = options ? options : {};

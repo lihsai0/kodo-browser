@@ -1,28 +1,27 @@
-import { ipcRenderer } from "electron";
-import { Region } from "kodo-s3-adapter-sdk";
+import { Qiniu, Region } from "kodo-s3-adapter-sdk";
 import { StorageClass } from "kodo-s3-adapter-sdk/dist/adapter";
 import { NatureLanguage } from "kodo-s3-adapter-sdk/dist/uplog";
 
 import Duration from "@common/const/duration";
 import * as AppConfig from "@common/const/app-config";
 
-import { BackendMode, EventKey, IpcUploadJob, IpcJobEvent, Status, UploadedPart } from "./types";
+import { BackendMode, EventKey, Status, UploadedPart } from "./types";
 import Base from "./base"
 import * as Utils from "./utils";
 
-// if change options, remember to check toJsonString()
+// if change options, remember to check getInfoForSave()
 interface RequiredOptions {
     clientOptions: {
         accessKey: string,
         secretKey: string,
         ucUrl: string,
         regions: Region[],
+        backendMode: BackendMode,
     },
 
     from: Utils.LocalPath,
     to: Utils.RemotePath,
     region: string,
-    backendMode: BackendMode,
 
     overwrite: boolean,
     storageClassName: StorageClass["kodoName"],
@@ -75,12 +74,16 @@ const DEFAULT_OPTIONS: OptionalOptions = {
 };
 
 export default class UploadJob extends Base {
+    // TODO: static fromSaveInfo(persistInfo: PersistInfo): UploadJob
+
+
     // - create options -
     private readonly options: RequiredOptions & OptionalOptions
 
     // - for job save and log -
     readonly id: string
     readonly kodoBrowserVersion: string
+    private isForceOverwrite: boolean = false
 
     // - for UI -
     private __status: Status
@@ -117,8 +120,6 @@ export default class UploadJob extends Base {
         ];
 
         this.message = this.options.message;
-
-        this.startUpload = this.startUpload.bind(this);
     }
 
     // TypeScript specification (8.4.3) says...
@@ -148,75 +149,39 @@ export default class UploadJob extends Base {
         return this.status !== Status.Running;
     }
 
-    private get ipcUploadJob(): IpcUploadJob {
+    get uiData() {
         return {
-            job: this.id,
-            key: IpcJobEvent.Upload,
-            clientOptions: {
-                ...this.options.clientOptions,
-                // if ucUrl is not undefined, downloader will use it generator url
-                ucUrl: this.options.clientOptions.ucUrl === ''
-                    ? undefined
-                    : this.options.clientOptions.ucUrl,
-                backendMode: this.options.backendMode,
-
-                userNatureLanguage: this.options.userNatureLanguage,
-            },
-            options: {
-                resumeUpload: this.options.resumeUpload,
-                maxConcurrency: this.options.maxConcurrency,
-                multipartUploadThreshold: this.options.multipartUploadThreshold * 1024 * 1024,
-                multipartUploadSize: this.options.multipartUploadSize * 1024 * 1024,
-                uploadSpeedLimit: this.options.uploadSpeedLimit,
-                kodoBrowserVersion: this.kodoBrowserVersion,
-            },
-            params: {
-                region: this.options.region,
-                bucket: this.options.to.bucket,
-                key: this.options.to.key,
-                localFile: this.options.from.path,
-                overwriteDup: this.options.overwrite,
-                storageClassName: this.options.storageClassName,
-                storageClasses: this.options.storageClasses,
-                isDebug: this.options.isDebug,
-            }
+            from: this.options.from,
+            to: this.options.to,
+            status: this.status,
+            speed: this.speed,
+            estimatedTime: this.predictLeftTime,
+            progress: this.prog,
+            message: this.message,
         }
     }
 
     start(
         forceOverwrite: boolean = false,
-        prog?: { // not same as Options["prog"]
-            uploadedId: string,
-            uploadedParts: UploadedPart[]
-        },
     ): this {
         if (this.status === Status.Running || this.status === Status.Finished) {
             return this;
         }
 
+        if (forceOverwrite) {
+            this.isForceOverwrite = true;
+        }
+
         if (this.options.isDebug) {
             console.log(`Try uploading ${this.options.from.path} to kodo://${this.options.to.bucket}/${this.options.to.key}`);
+            // console.log(`[JOB] sched starting => ${JSON.stringify(job)}`)
         }
 
         this.message = ""
 
         this._status = Status.Running;
 
-        const job = this.ipcUploadJob;
-        if (forceOverwrite) {
-            job.params.overwriteDup = true;
-        }
-        if (prog) {
-            job.params.uploadedId = prog.uploadedId;
-            job.params.uploadedParts = prog.uploadedParts;
-        }
-
-        if (this.options.isDebug) {
-            console.log(`[JOB] sched starting => ${JSON.stringify(job)}`)
-        }
-
-        ipcRenderer.on(this.id, this.startUpload);
-        ipcRenderer.send("asynchronous-job", job);
+        // TODO: uploadFile
 
         this.startSpeedCounter();
 
@@ -240,11 +205,11 @@ export default class UploadJob extends Base {
         this._status = Status.Stopped;
         this.emit("stop");
 
-        ipcRenderer.send("asynchronous-job", {
-            job: this.id,
-            key: IpcJobEvent.Stop,
-        });
-        ipcRenderer.removeListener(this.id, this.startUpload);
+        // ipcRenderer.send("asynchronous-job", {
+        //     job: this.id,
+        //     key: IpcJobEvent.Stop,
+        // });
+        // ipcRenderer.removeListener(this.id, this.startUpload);
 
         return this;
     }
@@ -262,55 +227,6 @@ export default class UploadJob extends Base {
         this.emit("pause");
 
         return this;
-    }
-
-    startUpload(_: any, data: any) {
-        if (this.options.isDebug) {
-            console.log("[IPC MAIN]", data);
-        }
-
-        switch (data.key) {
-            case EventKey.Duplicated:
-                ipcRenderer.removeListener(this.id, this.startUpload);
-                this._status = Status.Duplicated;
-                this.emit("fileDuplicated", data);
-                return;
-            case EventKey.Stat:
-                this.prog.total = data.data.progressTotal;
-                this.prog.resumable = data.data.progressResumable;
-                this.emit("progress", this.prog);
-                return;
-            case EventKey.Progress:
-                this.prog.loaded = data.data.progressLoaded;
-                this.prog.resumable = data.data.progressResumable;
-                this.emit("progress", this.prog);
-                return;
-            case EventKey.PartUploaded:
-                this.emit("partcomplete", data.data);
-                return;
-            case EventKey.Uploaded:
-                ipcRenderer.removeListener(this.id, this.startUpload);
-
-                this._status = Status.Finished;
-                this.emit("complete");
-                return;
-            case EventKey.Error:
-                console.error("upload object error:", data);
-                ipcRenderer.removeListener(this.id, this.startUpload);
-
-                this.message = data;
-                this._status = Status.Failed;
-                this.emit("error", data.error);
-                return;
-            case EventKey.Debug:
-                if (!this.options.isDebug) {
-                    console.log("Debug", data);
-                }
-                return;
-            default:
-                console.warn("Unknown", data);
-                return;
-        }
     }
 
     private startSpeedCounter() {
@@ -372,7 +288,7 @@ export default class UploadJob extends Base {
             to: this.options.to,
             overwrite: this.options.overwrite,
             storageClassName: this.options.storageClassName,
-            backendMode: this.options.backendMode,
+            backendMode: this.options.clientOptions.backendMode,
 
             // real-time info
             prog: {

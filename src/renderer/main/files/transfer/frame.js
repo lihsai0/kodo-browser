@@ -1,7 +1,11 @@
+import { ipcRenderer } from "electron";
 import angular from "angular"
 
 import webModule from '@/app-module/web'
 
+import * as AuthInfo from '@/components/services/authinfo';
+
+import NgConfig from '@/ng-config'
 import UploadMgr from '@/components/services/upload-manager'
 import DownloadMgr from '@/components/services/download-manager'
 import { TOAST_FACTORY_NAME as Toast } from '@/components/directives/toast-list'
@@ -22,12 +26,14 @@ const TRANSFER_FRAME_CONTROLLER_NAME = 'transferFrameCtrl'
 webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
   "$scope",
   "$translate",
+  NgConfig,
   UploadMgr,
   DownloadMgr,
   Toast,
   function (
     $scope,
     $translate,
+    ngConfig,
     UploadMgr,
     DownloadMgr,
     Toast,
@@ -69,6 +75,18 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
     UploadMgr.init($scope);
     DownloadMgr.init($scope);
 
+    ipcRenderer.on("UploaderManager-reply", (_event, message) => {
+      switch (message.action) {
+        case "updateUiData": {
+          console.log("lihs debug:", "renderer update ui by", message.data);
+          break;
+        }
+        default: {
+          console.warn("renderer received unknown action, message:", message);
+        }
+      }
+    });
+
     /**
      * upload
      * @param filePaths []  {array<string>}, iter for folder
@@ -77,22 +95,70 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
      */
     function uploadFilesHandler(filePaths, bucketInfo,uploadOptions) {
       Toast.info(T("upload.addtolist.on"));
-      UploadMgr.createUploadJobs(filePaths, bucketInfo, uploadOptions, function (isCancelled) {
-        Toast.info(T("upload.addtolist.success"));
-
-        $scope.transTab = 1;
-        $scope.toggleTransVisible(true);
-
-        AuditLog.log(
-          AuditLog.Action.UploadFilesStart,
-          {
-            regionId: bucketInfo.region,
-            bucket: bucketInfo.bucketName,
-            to: bucketInfo.key,
-            from: filePaths,
+      ipcRenderer.send("UploaderManager", {
+        action: "addJobs",
+        data: {
+          filePathnameList: filePaths,
+          destInfo: {
+            bucketName: bucketInfo.bucketName,
+            key: bucketInfo.key,
           },
-        );
+          uploadOptions: {
+            regionId: bucketInfo.regionId,
+            isOverwrite: uploadOptions.isOverwrite,
+            storageClassName: uploadOptions.storageClassName,
+          },
+          clientOptions: {
+            accessKey: AuthInfo.get().id,
+            secretKey: AuthInfo.get().secret,
+            ucUrl: ngConfig.ucUrl || "",
+            regions: ngConfig.regionId || [],
+            backendMode: bucketInfo.backendMode,
+            storageClasses: bucketInfo.availableStorageClasses,
+          },
+        },
       });
+
+      console.log("lihs debug:", "sent ipcRenderer", {
+        action: "addJobs",
+        data: {
+          filePathnameList: filePaths,
+          destInfo: {
+            bucketName: bucketInfo.bucketName,
+            key: bucketInfo.key,
+          },
+          uploadOptions: {
+            regionId: bucketInfo.regionId,
+            isOverwrite: uploadOptions.isOverwrite,
+            storageClassName: uploadOptions.storageClassName,
+          },
+          clientOptions: {
+            accessKey: AuthInfo.get().id,
+            secretKey: AuthInfo.get().secret,
+            ucUrl: ngConfig.ucUrl || "",
+            regions: ngConfig.regionId || [],
+            storageClasses: bucketInfo.availableStorageClasses,
+          },
+        },
+      });
+
+      // old logic
+      // UploadMgr.createUploadJobs(filePaths, bucketInfo, uploadOptions, function (isCancelled) {
+      //   Toast.info(T("upload.addtolist.success"));
+      //
+      //   $scope.transTab = 1;
+      //   $scope.toggleTransVisible(true);
+      //
+      //   AuditLog.log(
+      //     AuditLog.Action.UploadFilesStart,
+      //     {
+      //       regionId: bucketInfo.region,
+      //       bucket: bucketInfo.bucketName,
+      //       to: bucketInfo.key,
+      //       from: filePaths,
+      //     },
+      //   );
+      // });
     }
 
     /**

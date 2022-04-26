@@ -1,6 +1,6 @@
 import moment from "moment/moment"
 
-import Duration from "@/const/duration";
+import Duration from "@common/const/duration";
 import * as FileItem from "@/models/file-item";
 
 import { leftTime } from "@/components/services/util"

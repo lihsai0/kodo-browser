@@ -14,7 +14,7 @@
   ],
   "main": "main/main-bundle.js",
   "scripts": {
-    "dev": "./node_modules/.bin/webpack --env development -c ./webpack/webpack.config.js && ./node_modules/.bin/npm-run-all --parallel watch dev:run",
+    "dev": "./node_modules/.bin/webpack --env development -c ./webpack/webpack.config.js",
     "dev:run": "./node_modules/.bin/cross-env NODE_ENV=development electron ./dist/main/main-bundle.js",
     "prod": "./node_modules/.bin/cross-env NODE_ENV=production electron ./dist",
     "watch": "./node_modules/.bin/webpack --env development -c ./webpack/webpack-renderer.config.js -w",
@@ -84,6 +84,7 @@
     "webpack-cli": "^4.9.0"
   },
   "dependencies": {
+    "@root/walk": "^1.1.0",
     "@uirouter/angularjs": "^1.0.20",
     "angular": "1.7.9",
     "angular-sanitize": "1.7.5",
