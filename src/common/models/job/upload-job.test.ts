@@ -18,6 +18,7 @@ import UploadJob from "./upload-job";
 describe("test models/job/upload-job.ts", () => {
     describe("test stop", () => {
         it("stop", () => {
+            // TODO: UploadJob.fromPersistInfo
             const uploadJob = new UploadJob(uploadOptionsFromNewJob);
             const spiedEmit = jest.spyOn(uploadJob, "emit");
             spiedEmit.mockImplementation((_eventName: string, ..._args: any[]) => uploadJob);
@@ -153,7 +154,7 @@ describe("test models/job/upload-job.ts", () => {
                 .toEqual({
                     from: uploadOptionsFromNewJob.from,
 
-                    backendMode: uploadOptionsFromNewJob.backendMode,
+                    backendMode: uploadOptionsFromNewJob.clientOptions.backendMode,
                     overwrite: uploadOptionsFromNewJob.overwrite,
                     to: uploadOptionsFromNewJob.to,
                     region: uploadOptionsFromNewJob.region,

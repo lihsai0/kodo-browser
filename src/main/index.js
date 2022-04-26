@@ -233,6 +233,35 @@ let createWindow = () => {
 
 ///*****************************************
 // listener events send from renderer process
+ipcMain.on("UploaderManager", (event, message) => {
+  console.log("lihs debug:", "main received ipcMain UploaderManager");
+  let uploaderProcess = forkedWorkers.get("uploader");
+  if (!uploaderProcess) {
+    const processName = "UploaderProcess";
+    uploaderProcess = fork(
+        path.join(root, "main", "uploader-bundle.js"),
+        [],
+        {
+          cwd: root,
+          silent: false,
+        },
+    );
+    forkedWorkers.set(processName, uploaderProcess);
+
+    uploaderProcess.on("exit", () => {
+      forkedWorkers.delete(processName)
+      console.log("lihs debug:", "main received UploaderProcess exit");
+    });
+
+    uploaderProcess.on("message", (message) => {
+      console.log("lihs debug:", "main received UploaderProcess message", message);
+      event.sender.send("UploaderManager-reply", message);
+    });
+  }
+
+  uploaderProcess.send(message);
+});
+
 ipcMain.on("asynchronous", (event, data) => {
   switch (data.key) {
   case "getStaticServerPort":
