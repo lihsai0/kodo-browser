@@ -1,35 +1,14 @@
-import {Stats} from "fs";
+import fs, {Stats} from "fs";
 import path from "path";
 // @ts-ignore
 import Walk from "@root/walk";
-import {Region} from "kodo-s3-adapter-sdk";
 
+import {config_path} from "@common/const/app-config";
+import {ClientOptions, DestInfo, UploadAction, UploadOptions} from "@common/ipc-actions/upload";
 import {UploadJob} from "@common/models/job";
-import {BackendMode, Status} from "@common/models/job/types";
-// import { createClient } from "../common/qiniu-store/lib/ioutil";
+import {Status} from "@common/models/job/types";
 
 // Manager
-interface DestInfo {
-    bucketName: string,
-    // regionId: string, // TODO: seems useless
-    key: string,
-}
-
-interface UploadOptions {
-    regionId: string,
-    isOverwrite: boolean,
-    storageClassName: StorageClass["kodoName"],
-}
-
-interface ClientOptions {
-    accessKey: string,
-    secretKey: string,
-    ucUrl: string,
-    regions: Region[],
-    backendMode: BackendMode,
-    storageClasses: StorageClass[],
-}
-
 interface ManagerConfig {
     resumeUpload: boolean,
     maxConcurrency: number,
@@ -43,18 +22,9 @@ interface StatsWithName extends Stats {
     name: string,
 }
 
-// TODO: src/renderer/components/services/qiniu-client/storage-class.ts
-interface StorageClass {
-    fileType: number,
-    kodoName: string,
-    s3Name: string,
-    billingI18n: Record<string, string>,
-    nameI18n: Record<string, string>,
-}
-
 const defaultManagerConfig: ManagerConfig = {
     isDebug: false,
-    maxConcurrency: 1,
+    maxConcurrency: 10,
     multipartUploadSize: 0,
     multipartUploadThreshold: 0,
     resumeUpload: false,
@@ -67,7 +37,6 @@ function defaultJobsAdding() {
 
 function defaultJobsAdded() {
     console.log("jobsAdded");
-    setExitTimer(5000);
 }
 
 class UploadManager {
@@ -103,13 +72,15 @@ class UploadManager {
                         ? destInfo.key.slice(0, -1)
                         : destInfo.key;
                     const localParentDirectory = path.dirname(filePathname);
+
+                    // remoteKey should be "path/to/file"
                     // TODO: check on windows, seems need .replace(/\\/, "/")
-                    const remoteKey = remoteBaseDirectory + walkingPathname.slice(localParentDirectory.length);
+                    let remoteKey = remoteBaseDirectory + walkingPathname.slice(localParentDirectory.length);
+                    remoteKey = remoteKey.startsWith("/") ? remoteKey.slice(1) : remoteKey;
 
                     if (statsWithName.isDirectory()) {
                         console.log("lihs debug:", "QiniuClient.createFolder()", remoteKey);
-                    }
-                    else if (statsWithName.isFile()) {
+                    } else if (statsWithName.isFile()) {
                         console.group("lihs debug:", "UploadManager.createUploadJob()", remoteKey);
                         // console.log("lihs debug:", "destInfo", destInfo);
                         // console.log("lihs debug:", "uploadOptions", uploadOptions);
@@ -179,9 +150,50 @@ class UploadManager {
         UploadManager.jobIds.push(job.id);
     }
 
-    public static getJobsUiData(ids: UploadJob["id"][]) {
-        return ids.filter(id => UploadManager.jobs.has(id))
-            .map(id => UploadManager.jobs.get(id)?.uiData);
+    public static getJobsUiDataByPage(pageNum: number = 0, count: number = 10) {
+        return {
+            list: UploadManager.jobIds.slice(pageNum, pageNum * count + count)
+                .map(id => UploadManager.jobs.get(id)?.uiData),
+            // TODO: statSummary get method
+            total: UploadManager.jobIds.length,
+            finished: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Finished).length,
+            running: UploadManager.concurrency,
+            failed: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Failed).length,
+            stopped: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Stopped).length,
+        };
+    }
+
+    public static getJobsUiDataByIds(ids: UploadJob["id"][]) {
+        return {
+            list: ids.filter(id => UploadManager.jobs.has(id))
+                .map(id => UploadManager.jobs.get(id)?.uiData),
+            // TODO: statSummary get method
+            total: UploadManager.jobIds.length,
+            finished: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Finished).length,
+            running: UploadManager.concurrency,
+            failed: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Failed).length,
+            stopped: UploadManager.jobIds.filter(id => UploadManager.jobs.get(id)?.status === Status.Stopped).length,
+        };
+    }
+
+    public static persistJobs(): void {
+        if (UploadManager.jobIds.length <= 0) {
+            return
+        }
+        // TODO: support multiple users or move auth data to main from renderer
+        const username = UploadManager.jobs.get(UploadManager.jobIds[0])?.accessKey;
+        const jobsPath = path.join(config_path, "upprog_" + username + ".json");
+        fs.writeFileSync(
+            jobsPath,
+            JSON.stringify(
+                UploadManager.jobIds.map(id => UploadManager.jobs.get(id)?.getInfoForSave({}))
+            ),
+        );
+    }
+
+    public static loadJobsFromStorage(): void {
+        // TODO
+        // fs.readFileSync();
     }
 
     private static scheduleJobs(): void {
@@ -205,22 +217,31 @@ class UploadManager {
                 console.log("lihs debug:", "resumable", job.id);
             }
             console.log("lihs debug:", "job.start()");
-            job.start();
-            setTimeout(() => {
-                UploadManager.afterJobDone(job.id);
-            }, 600);
+            job.start()
+                .catch(err => {
+                    console.log("lihs debug:", "job.start() err:", err);
+                })
+                .finally(() => {
+                    UploadManager.afterJobDone(job.id);
+                });
+
+            UploadManager.concurrency = Math.max(0, UploadManager.concurrency);
+            if (UploadManager.concurrency >= UploadManager.config.maxConcurrency) {
+                return;
+            }
         }
     }
 
     private static afterJobDone(id: UploadJob["id"]): void {
         console.log("lihs debug:", "job done", id);
-        UploadManager.jobs.delete(id);
-        UploadManager.jobIds.splice(UploadManager.jobIds.indexOf(id), 1);
-        UploadManager.concurrency -=1;
+        // UploadManager.jobs.delete(id);
+        // UploadManager.jobIds.splice(UploadManager.jobIds.indexOf(id), 1);
+        UploadManager.concurrency -= 1;
         UploadManager.scheduleJobs();
     }
 }
 
+// TODO: no any, move to @common/ipc-actions/upload.ts
 interface MessageData {
     action: string,
     data: any,
@@ -231,9 +252,9 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("message", (message: MessageData) => {
-    console.log("lihs debug:", "uploader received", message);
+    // console.log("lihs debug:", "uploader received", message);
     switch (message.action) {
-        case "addJobs": {
+        case UploadAction.AddJobs: {
             UploadManager.createUploadJobs(
                 message.data.filePathnameList,
                 message.data.destInfo,
@@ -242,10 +263,13 @@ process.on("message", (message: MessageData) => {
             );
             break;
         }
-        case "updateUiData": {
+        case UploadAction.UpdateUiData: {
             process.send?.({
-                action: "updateJobUiData",
-                data: UploadManager.getJobsUiData(message.data),
+                action: UploadAction.UpdateUiData,
+                data: UploadManager.getJobsUiDataByPage(
+                    message.data.pageNum,
+                    message.data.count,
+                ),
             });
             break;
         }
@@ -255,19 +279,23 @@ process.on("message", (message: MessageData) => {
     }
 });
 
-// if all jobs done, wait a while instead of exiting process.
-let exitTimer: NodeJS.Timeout | undefined;
-
-function resetExitTimer() {
-    if (exitTimer !== undefined) {
-        clearTimeout(exitTimer);
-    }
-}
-
-function setExitTimer(msDuration: number) {
-    resetExitTimer()
-    exitTimer = setTimeout(() => {
-        console.log("upload process exit, because no job to do in past", msDuration, "ms");
-        process.exit(0);
-    }, msDuration);
-}
+// process.on("exit", () => {
+//
+// });
+//
+// // if all jobs done, wait a while instead of exiting process.
+// let exitTimer: NodeJS.Timeout | undefined;
+//
+// function resetExitTimer() {
+//     if (exitTimer !== undefined) {
+//         clearTimeout(exitTimer);
+//     }
+// }
+//
+// function setExitTimer(msDuration: number) {
+//     resetExitTimer()
+//     exitTimer = setTimeout(() => {
+//         console.log("upload process exit, because no job to do in past", msDuration, "ms");
+//         process.exit(0);
+//     }, msDuration);
+// }

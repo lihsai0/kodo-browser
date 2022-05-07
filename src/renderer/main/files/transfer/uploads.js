@@ -4,7 +4,6 @@ import webModule from '@/app-module/web'
 
 import jobUtil from '@/components/services/job-util'
 import DelayDone from '@/components/services/delay-done'
-import UploadMgr from '@/components/services/upload-manager'
 import { TOAST_FACTORY_NAME as Toast } from '@/components/directives/toast-list'
 import {
   EMPTY_FOLDER_UPLOADING,
@@ -19,7 +18,6 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
   "$translate",
   jobUtil,
   DelayDone,
-  UploadMgr,
   Toast,
   Dialog,
   function (
@@ -28,11 +26,10 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
     $translate,
     jobUtil,
     DelayDone,
-    UploadMgr,
     Toast,
     Dialog
   ) {
-    var T = $translate.instant;
+    const T = $translate.instant;
 
     angular.extend($scope, {
       triggerEmptyFolder: triggerEmptyFolder,
@@ -60,7 +57,7 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
     });
 
     function loadMoreItems() {
-      var len = $scope.lists.uploadJobList.length;
+      const len = $scope.lists.uploadJobList.length;
       if ($scope.limitToNum < len) {
         $scope.limitToNum += Math.min(100, len - $scope.limitToNum);
       }
@@ -78,27 +75,21 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
         item.wait();
       }
 
-      UploadMgr.trySchedJob();
+      // TODO: send IPC to schedule upload jobs
     }
 
+    // TODO: rename to `removeJobConfirm`
     function showRemoveItem(item) {
-      if (item.status == "finished") {
+      if (item.status === "finished") {
         doRemove(item);
       } else {
-        var title = T("remove.from.list.title"); //'从列表中移除'
-        var message = T("remove.from.list.message"); //'确定移除该上传任务?'
+        const title = T("remove.from.list.title"); //'从列表中移除'
+        const message = T("remove.from.list.message"); //'确定移除该上传任务?'
         Dialog.confirm(
           title,
           message,
           (btn) => {
             if (btn) {
-              if (item.status == "running" ||
-                item.status == "waiting" ||
-                item.status == "verifying" ||
-                item.status == "duplicated") {
-                item.stop();
-              }
-
               doRemove(item);
             }
           },
@@ -108,102 +99,55 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
     }
 
     function doRemove(item) {
-      var jobs = $scope.lists.uploadJobList;
-      for (var i = 0; i < jobs.length; i++) {
-        if (item === jobs[i]) {
-          jobs.splice(i, 1);
-          break;
-        }
-      }
-
-      $timeout(() => {
-        UploadMgr.trySaveProg();
-        $scope.calcTotalProg();
-      });
+      // TODO: send IPC to remove upload jobs
     }
 
     function clearAllCompleted() {
-      var jobs = $scope.lists.uploadJobList;
-      for (var i = 0; i < jobs.length; i++) {
-        if ("finished" == jobs[i].status) {
-          jobs.splice(i, 1);
-          i--;
-        }
-      }
-
-      $timeout(() => {
-        $scope.calcTotalProg();
-      });
+      // TODO: send IPC to cleanup upload jobs
     }
 
     function clearAll() {
       if (!$scope.lists.uploadJobList ||
-        $scope.lists.uploadJobList.length == 0) {
+        $scope.lists.uploadJobList.length === 0) {
         return;
       }
 
-      var title = T("clear.all.title"); //清空所有
-      var message = T("clear.all.upload.message"); //确定清空所有上传任务?
+      const title = T("clear.all.title"); //清空所有
+      const message = T("clear.all.upload.message"); //确定清空所有上传任务?
       Dialog.confirm(
         title,
         message,
         (btn) => {
           if (btn) {
-            var jobs = $scope.lists.uploadJobList;
-            for (var i = 0; i < jobs.length; i++) {
-              var job = jobs[i];
-              if (job.status == "running" ||
-                job.status == "waiting" ||
-                job.status == "verifying" ||
-                job.status == "duplicated") {
-                job.stop();
-              }
-
-              jobs.splice(i, 1);
-              i--;
-            }
-
-            $timeout(() => {
-              UploadMgr.trySaveProg();
-              $scope.calcTotalProg();
-            });
+            // TODO: send IPC to remove all upload jobs
           }
         },
         1
       );
     }
 
-    var stopFlag = false;
+    let stopFlag = false;
 
     function stopAll() {
-      var arr = $scope.lists.uploadJobList;
+      const arr = $scope.lists.uploadJobList;
       if (arr && arr.length > 0) {
         stopFlag = true;
-
-        UploadMgr.stopCreatingJobs();
 
         Toast.info(T("pause.on")); //'正在暂停...'
         $scope.allActionBtnDisabled = true;
 
-        angular.forEach(arr, function (n) {
-          if (item.resumable && (
-              n.status == "running" ||
-              n.status == "waiting" ||
-              n.status == "verifying"
-            ))
-            n.stop();
-        });
+        // TODO: send IPC stop creating and stop all running upload jobs
+
         Toast.info(T("pause.success"));
 
         $timeout(function () {
-          UploadMgr.trySaveProg();
           $scope.allActionBtnDisabled = false;
         }, 100);
       }
     }
 
     function startAll() {
-      var arr = $scope.lists.uploadJobList;
+      const arr = $scope.lists.uploadJobList;
       stopFlag = false;
       //串行
       if (arr && arr.length > 0) {
@@ -215,11 +159,11 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
               return;
             }
 
-            if (n && (n.status == "stopped" || n.status == "failed")) {
+            if (n && (n.status === "stopped" || n.status === "failed")) {
               n.wait();
             }
 
-            UploadMgr.trySchedJob();
+            // TODO: send IPC to schedule upload jobs
 
             fn();
           },

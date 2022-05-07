@@ -234,10 +234,10 @@ let createWindow = () => {
 ///*****************************************
 // listener events send from renderer process
 ipcMain.on("UploaderManager", (event, message) => {
-  console.log("lihs debug:", "main received ipcMain UploaderManager");
-  let uploaderProcess = forkedWorkers.get("uploader");
+  const processName = "UploaderProcess";
+  let uploaderProcess = forkedWorkers.get(processName);
   if (!uploaderProcess) {
-    const processName = "UploaderProcess";
+    console.log("lihs debug:", "main fork UploaderProcess");
     uploaderProcess = fork(
         path.join(root, "main", "uploader-bundle.js"),
         [],
@@ -254,7 +254,6 @@ ipcMain.on("UploaderManager", (event, message) => {
     });
 
     uploaderProcess.on("message", (message) => {
-      console.log("lihs debug:", "main received UploaderProcess message", message);
       event.sender.send("UploaderManager-reply", message);
     });
   }
