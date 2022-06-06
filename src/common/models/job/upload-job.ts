@@ -2,6 +2,7 @@ import {promises as fsPromises} from 'fs';
 
 // @ts-ignore
 import mime from "mime";
+import lodash from "lodash";
 import {Qiniu, Region, Uploader} from "kodo-s3-adapter-sdk";
 import {Adapter, Part, StorageClass} from "kodo-s3-adapter-sdk/dist/adapter";
 import {RecoveredOption} from "kodo-s3-adapter-sdk/dist/uploader";
@@ -13,8 +14,9 @@ import * as AppConfig from "@common/const/app-config";
 import {BackendMode, Status, UploadedPart} from "./types";
 import Base from "./base"
 import * as Utils from "./utils";
+import ByteSize from "@common/const/byte-size";
 
-// if change options, remember to check getInfoForSave()
+// if change options, remember to check PersistInfo
 interface RequiredOptions {
     clientOptions: {
         accessKey: string,
@@ -32,23 +34,24 @@ interface RequiredOptions {
     storageClassName: StorageClass["kodoName"],
     storageClasses: StorageClass[],
 
+    // could be removed if there is a better uplog
     userNatureLanguage: NatureLanguage,
 }
 
 interface OptionalOptions {
+    id: string,
     maxConcurrency: number,
-    resumeUpload: boolean,
-    multipartUploadThreshold: number,
-    multipartUploadSize: number,
-    uploadSpeedLimit: number,
+    multipartUploadThreshold: number, // Bytes
+    multipartUploadSize: number, // Bytes
+    uploadSpeedLimit: number, // Bytes/s
     uploadedId: string,
     uploadedParts: UploadedPart[],
 
     status: Status,
 
     prog: {
-        total: number,
-        loaded: number,
+        total: number, // Bytes
+        loaded: number, // Bytes
         resumable?: boolean,
     },
 
@@ -59,10 +62,11 @@ interface OptionalOptions {
 export type Options = RequiredOptions & Partial<OptionalOptions>
 
 const DEFAULT_OPTIONS: OptionalOptions = {
+    id: '',
+
     maxConcurrency: 10,
-    resumeUpload: false,
-    multipartUploadThreshold: 100,
-    multipartUploadSize: 8,
+    multipartUploadThreshold: 10 * ByteSize.MB,
+    multipartUploadSize: 4 * ByteSize.MB,
     uploadSpeedLimit: 0, // 0 means no limit
     uploadedId: "",
     uploadedParts: [],
@@ -78,12 +82,49 @@ const DEFAULT_OPTIONS: OptionalOptions = {
     isDebug: false,
 };
 
-export default class UploadJob extends Base {
-    // TODO: static fromSaveInfo(persistInfo: PersistInfo): UploadJob
+type PersistInfo = {
+    from: RequiredOptions['from'],
+    storageClasses: RequiredOptions['storageClasses'],
+    region: RequiredOptions['region'],
+    to: RequiredOptions['to'],
+    overwrite: RequiredOptions['overwrite'],
+    storageClassName: RequiredOptions['storageClassName'],
+    // if we can remove backendMode?
+    // because we always use the client current backendMode.
+    backendMode: RequiredOptions['clientOptions']['backendMode'],
+    prog: OptionalOptions['prog'],
+    status: OptionalOptions['status'],
+    message: OptionalOptions['message'],
+    uploadedId: OptionalOptions['uploadedId'],
+    // ugly. if can do some break changes, make it be
+    // `uploadedParts: OptionalOptions['uploadedParts'],`
+    uploadedParts: {
+        PartNumber: UploadedPart['partNumber'],
+        ETag: UploadedPart['etag'],
+    }[],
+}
 
+export default class UploadJob extends Base {
+    static fromPersistInfo(
+        id: string,
+        persistInfo: PersistInfo,
+        clientOptions: RequiredOptions['clientOptions'],
+        userNatureLanguage: RequiredOptions['userNatureLanguage'],
+    ): UploadJob {
+        return new UploadJob({
+            ...persistInfo,
+            id,
+            clientOptions,
+            userNatureLanguage,
+            uploadedParts: persistInfo.uploadedParts.map(part => ({
+                partNumber: part.PartNumber,
+                etag: part.ETag,
+            })),
+        })
+    }
 
     // - create options -
-    private readonly options: RequiredOptions & OptionalOptions
+    private readonly options: Readonly<RequiredOptions & OptionalOptions>
 
     // - for job save and log -
     readonly id: string
@@ -94,8 +135,8 @@ export default class UploadJob extends Base {
     private __status: Status
     // speed
     speedTimerId?: number = undefined
-    speed: number = 0
-    predictLeftTime: number = 0
+    speed: number = 0 // Bytes/s
+    predictLeftTime: number = 0 // seconds
     // message
     message: string
 
@@ -104,15 +145,17 @@ export default class UploadJob extends Base {
     uploadedId: string
     uploadedParts: UploadedPart[]
 
+    // - for process control -
+    uploader?: Uploader
+
     constructor(config: Options) {
         super();
-        this.id = `uj-${new Date().getTime()}-${Math.random().toString().substring(2)}`
+        this.id = config.id
+            ? config.id
+            : `uj-${new Date().getTime()}-${Math.random().toString().substring(2)}`;
         this.kodoBrowserVersion = AppConfig.app.version;
 
-        this.options = {
-            ...DEFAULT_OPTIONS,
-            ...config,
-        }
+        this.options = lodash.merge({}, DEFAULT_OPTIONS, config);
 
         this.__status = this.options.status;
 
@@ -149,10 +192,7 @@ export default class UploadJob extends Base {
             || this.status === Status.Finished
             || this.status === Status.Duplicated
         ) {
-            clearInterval(this.speedTimerId);
-
-            this.speed = 0;
-            this.predictLeftTime = 0;
+            this.stopSpeedCounter();
         }
     }
 
@@ -160,7 +200,7 @@ export default class UploadJob extends Base {
         return this.__status
     }
 
-    get isStopped(): boolean {
+    get isNotRunning(): boolean {
         return this.status !== Status.Running;
     }
 
@@ -207,8 +247,7 @@ export default class UploadJob extends Base {
             this.options.clientOptions.regions,
         );
         const qiniuClient = qiniu.mode(
-            // this.options.clientOptions.backendMode,
-            's3',
+            this.options.clientOptions.backendMode,
             {
                 appName: 'kodo-browser/ioutil',
                 appVersion: this.kodoBrowserVersion,
@@ -224,7 +263,7 @@ export default class UploadJob extends Base {
         );
 
         // upload
-        // this.startSpeedCounter();
+        this.startSpeedCounter();
         await qiniuClient.enter(
             'uploadFile',
             this.startUpload,
@@ -233,6 +272,10 @@ export default class UploadJob extends Base {
                 targetKey: this.options.to.key,
             },
         ).catch(err => {
+            if (err === Uploader.userCanceledError) {
+                this._status = Status.Stopped;
+                return;
+            }
             this._status = Status.Failed;
             this.message = err.toString();
         });
@@ -255,43 +298,9 @@ export default class UploadJob extends Base {
             }
         }
 
-        const uploader = new Uploader(client);
+        this.uploader = new Uploader(client);
         const fileHandle = await fsPromises.open(this.options.from.path, 'r');
-        // console.log(
-        //     "lihs debug:",
-        //     "putObjectFromFile args",
-        //     this.options.region,
-        //     {
-        //         bucket: this.options.to.bucket,
-        //         key: this.options.to.key,
-        //         storageClassName: this.options.storageClassName,
-        //     },
-        //     fileHandle,
-        //     this.options.from.size,
-        //     this.options.from.name,
-        //     {
-        //         header: {
-        //             contentType: mime.getType(this.options.from.path)
-        //         },
-        //         recovered: {
-        //             uploadId: this.uploadedId,
-        //             parts: this.uploadedParts,
-        //         },
-        //         uploadThreshold: this.options.multipartUploadThreshold,
-        //         partSize: this.options.multipartUploadSize,
-        //         putCallback: {
-        //             partsInitCallback: this.handlePartsInit,
-        //             partPutCallback: this.handlePartPutted,
-        //             progressCallback: this.handleProgress,
-        //         },
-        //         uploadThrottleOption: this.options.uploadSpeedLimit > 0
-        //             ? {
-        //                 rate: this.options.uploadSpeedLimit * 1024,
-        //             }
-        //             : undefined,
-        //     },
-        // );
-        await uploader.putObjectFromFile(
+        await this.uploader.putObjectFromFile(
             this.options.region,
             {
                 bucket: this.options.to.bucket,
@@ -305,10 +314,12 @@ export default class UploadJob extends Base {
                 header: {
                     contentType: mime.getType(this.options.from.path)
                 },
-                recovered: {
-                    uploadId: this.uploadedId,
-                    parts: this.uploadedParts,
-                },
+                recovered: this.uploadedId && this.uploadedParts
+                    ? {
+                        uploadId: this.uploadedId,
+                        parts: this.uploadedParts,
+                    }
+                    : undefined,
                 uploadThreshold: this.options.multipartUploadThreshold,
                 partSize: this.options.multipartUploadSize,
                 putCallback: {
@@ -318,7 +329,7 @@ export default class UploadJob extends Base {
                 },
                 uploadThrottleOption: this.options.uploadSpeedLimit > 0
                     ? {
-                        rate: this.options.uploadSpeedLimit * 1024,
+                        rate: this.options.uploadSpeedLimit,
                     }
                     : undefined,
             }
@@ -326,23 +337,24 @@ export default class UploadJob extends Base {
         this._status = Status.Finished;
 
         await fileHandle.close();
+        this.emit("complete");
     }
 
     stop(): this {
         if (this.status === Status.Stopped) {
             return this;
         }
+        this._status = Status.Stopped;
 
         if (this.options.isDebug) {
             console.log(`Pausing ${this.options.from.path}`);
         }
 
-        clearInterval(this.speedTimerId);
-
-        this.speed = 0;
-        this.predictLeftTime = 0;
-
-        this._status = Status.Stopped;
+        if (!this.uploader) {
+            return this;
+        }
+        this.uploader.abort();
+        this.uploader = undefined;
 
         return this;
     }
@@ -351,61 +363,60 @@ export default class UploadJob extends Base {
         if (this.status === Status.Waiting) {
             return this;
         }
+        this._status = Status.Waiting;
 
         if (this.options.isDebug) {
             console.log(`Pending ${this.options.from.path}`);
         }
 
-        this._status = Status.Waiting;
+        if (!this.uploader) {
+            return this;
+        }
+        this.uploader.abort();
+        this.uploader = undefined;
 
         return this;
     }
 
-    // @ts-ignore
     private startSpeedCounter() {
-        const startedAt = new Date().getTime();
+        this.stopSpeedCounter();
 
+        let lastTimestamp = new Date().getTime();
         let lastLoaded = this.prog.loaded;
-        let lastSpeed = 0;
-
-        clearInterval(this.speedTimerId);
         const intervalDuration = Duration.Second;
         this.speedTimerId = setInterval(() => {
-            if (this.isStopped) {
-                this.speed = 0;
-                this.predictLeftTime = 0;
+            if (this.isNotRunning) {
+                this.stopSpeedCounter();
                 return;
             }
 
-            const avgSpeed = this.prog.loaded / (new Date().getTime() - startedAt) * Duration.Second;
-            this.speed = this.prog.loaded - lastLoaded;
-            if (this.speed <= 0 || (lastSpeed / this.speed) > 1.1) {
-                this.speed = lastSpeed * 0.95;
-            }
-            if (this.speed < avgSpeed) {
-                this.speed = avgSpeed;
-            }
+            const nowTimestamp = new Date().getTime();
+
+            this.speed = (this.prog.loaded - lastLoaded) / ((nowTimestamp - lastTimestamp) / Duration.Second);
+            this.predictLeftTime = Math.max(
+                (this.prog.total - this.prog.loaded) / this.speed * Duration.Second,
+                0,
+            );
 
             lastLoaded = this.prog.loaded;
-            lastSpeed = this.speed;
-
-
-            if (this.options.uploadSpeedLimit && this.speed > this.options.uploadSpeedLimit * 1024) {
-                this.speed = this.options.uploadSpeedLimit * 1024;
-            }
-
-            this.predictLeftTime = this.speed <= 0
-                ? 0
-                : Math.floor((this.prog.total - this.prog.loaded) / this.speed * 1000);
+            lastTimestamp = nowTimestamp;
         }, intervalDuration) as unknown as number; // hack type problem of nodejs and browser
     }
 
+    private stopSpeedCounter() {
+        this.speed = 0;
+        this.predictLeftTime = 0;
+        clearInterval(this.speedTimerId);
+    }
+
     private handleProgress(uploaded: number, total: number) {
-        // TODO: abort return
+        if (!this.uploader) {
+            return;
+        }
         this.prog.loaded = uploaded;
         this.prog.total = total;
-        console.log("lihs debug:", "upload progress", (uploaded / total * 100).toFixed(2), "%");
-        // TODO: should try save progress
+
+        this.emit("progress", lodash.merge({}, this.prog));
     }
 
     private handlePartsInit(initInfo: RecoveredOption) {
@@ -414,27 +425,17 @@ export default class UploadJob extends Base {
     }
 
     private handlePartPutted(part: Part) {
-        // TODO: abort return
-        this.uploadedParts[part.partNumber] = part;
-        console.log("lihs debug:", "parts updated", part);
-        // TODO: should try save progress
+        if (!this.uploader) {
+            return;
+        }
+        this.uploadedParts.push(part);
+
+        this.emit("partcomplete", lodash.merge({}, part));
     }
 
-    getInfoForSave({
-        from
-    }: {
-        from?: {
-            size?: number,
-            mtime?: number,
-        }
-    }) {
+    get persistInfo(): PersistInfo {
         return {
-            from: {
-                ...this.options.from,
-                ...from,
-            },
-
-            // read-only info
+            from: this.options.from,
             storageClasses: this.options.storageClasses,
             region: this.options.region,
             to: this.options.to,
@@ -457,4 +458,3 @@ export default class UploadJob extends Base {
         };
     }
 }
-

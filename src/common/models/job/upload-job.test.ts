@@ -150,7 +150,7 @@ describe("test models/job/upload-job.ts", () => {
             ]);
 
             // info should in disk
-            expect(uploadJob.getInfoForSave({}))
+            expect(uploadJob.persistInfo)
                 .toEqual({
                     from: uploadOptionsFromNewJob.from,
 

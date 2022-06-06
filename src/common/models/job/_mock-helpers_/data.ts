@@ -16,7 +16,6 @@ export const uploadOptionsFromNewJob = {
     "from": {
         "name": "out.gif",
         "path": "/local/path/to/out.gif",
-        // TODO: remove below fields
         "size": 1024,
         "mtime": 1651042948862,
     },

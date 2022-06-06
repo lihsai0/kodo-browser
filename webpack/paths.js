@@ -30,7 +30,7 @@ module.exports = {
   appMainIndex: resolveApp('src/main/index.js'),
   appMainDownloadWorker: resolveApp('src/main/download-worker.js'),
   appMainUploadWorker: resolveApp('src/main/upload-worker.js'),
-  appMainUploader: resolveApp('src/main/uploader.ts'),
+  appMainUploader: resolveApp('src/main/uploader/index.ts'),
   appBuildMain: resolveApp('dist/main'),
 
   appRenderer: resolveApp('src/renderer'),

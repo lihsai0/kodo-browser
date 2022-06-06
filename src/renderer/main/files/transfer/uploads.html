@@ -3,18 +3,18 @@
 
     <div class="pull-left" style="position:relative">
       <input type="text" cleanable-input placeholder="{{'transframe.search.placeholder'|translate}}"
-        class="form-control input-sm" style="width:200px;" ng-model="sch.upname">
+        class="form-control input-sm" style="width:200px;" ng-model="transSearch.uploadJob">
     </div>
 
     <div class="pull-left">
       <a href="" ng-if="totalStat.upStopped>0" class="btn btn-link btn-sm" style="text-decoration:none"
-        ng-click="sch.upname='stopped'">
+        ng-click="transSearch.uploadJob='stopped'">
         <span class=" text-warning">
           <i class="fa fa-info-circle"></i> {{totalStat.upStopped}}
         </span>
       </a>
       <a href="" ng-if="totalStat.upFailed>0" class="btn btn-link btn-sm" style="text-decoration:none"
-        ng-click="sch.upname='failed'">
+        ng-click="transSearch.uploadJob='failed'">
         <span class=" text-danger">
           <i class="fa fa-remove"></i> {{totalStat.upFailed}}
         </span>
@@ -71,7 +71,7 @@
 
     <ul class="list-group list-condensed" style="margin-bottom:0px">
       <li class="list-group-item"
-        ng-repeat="item in lists.uploadJobList|listFilter:schKeyFn:sch.upname|limitTo:limitToNum track by item.id">
+        ng-repeat="item in lists.uploadJobList track by item.id">
         <div class="col-sm-4">
           <div class="text-overflow" uib-tooltip-template="'upload-path-tooltip-tpl.html'" tooltip-placement="left"
             tooltip-append-to-body="true">
@@ -100,7 +100,7 @@
             <span
               ng-if="item.progress.loaded!=item.progress.total">{{item.progress.loaded|sizeFormat}}/</span>{{item.progress.total|sizeFormat}}
           </small>
-          <small ng-show="item.predictLeftTime">, {{item.predictLeftTime|leftTimeFormat}}</small>
+          <small ng-show="item.estimatedTime">, {{item.estimatedTime|leftTimeFormat}}</small>
           <small ng-if="item.status == 'duplicated'" class="text-danger">
             <i class="glyphicon glyphicon-alert"></i>
             {{'upload.duplicated'|translate}}
@@ -109,7 +109,7 @@
 
         <div class="col-sm-2 text-right">
           <a ng-if="item.progress.resumable && (item.status=='running' || item.status=='waiting' || item.status=='verifying')"
-            href="" ng-click="item.stop()" class="btn btn-default btn-xs" uib-tooltip="{{'upload.job.pause'|translate}}"
+            href="" ng-click="stopItem(item)" class="btn btn-default btn-xs" uib-tooltip="{{'upload.job.pause'|translate}}"
             tooltip-placement="left">
             <i class="glyphicon glyphicon-pause text-warning"></i>
           </a>
@@ -136,7 +136,7 @@
     </ul>
 
     <div class="clearfix text-center" style="padding:4px;">
-      <span ng-if="limitToNum < (lists.uploadJobList|listFilter:schKeyFn:sch.upname).length">
+      <span ng-if="limitToNum < lists.uploadJobList.length">
         {{'loading'|translate}}
       </span>
     </div>

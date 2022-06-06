@@ -1,7 +1,7 @@
 import angular from "angular"
 
 import webModule from '@/app-module/web'
-
+import ipcUploadManager from "@/components/services/ipc-upload-manager"
 import jobUtil from '@/components/services/job-util'
 import DelayDone from '@/components/services/delay-done'
 import { TOAST_FACTORY_NAME as Toast } from '@/components/directives/toast-list'
@@ -33,6 +33,7 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
 
     angular.extend($scope, {
       triggerEmptyFolder: triggerEmptyFolder,
+      stopItem: stopItem,
       showRemoveItem: showRemoveItem,
       clearAllCompleted: clearAllCompleted,
       clearAll: clearAll,
@@ -40,26 +41,13 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
       startAll: startAll,
       checkStartJob: checkStartJob,
 
-      sch: {
-        upname: null
-      },
-      schKeyFn: function (item) {
-        return (
-          item.options.from.name +
-          " " +
-          item.status +
-          " " +
-          jobUtil.getStatusLabel(item.status)
-        );
-      },
-      limitToNum: 100,
       loadMoreUploadItems: loadMoreItems
     });
 
     function loadMoreItems() {
-      const len = $scope.lists.uploadJobList.length;
-      if ($scope.limitToNum < len) {
-        $scope.limitToNum += Math.min(100, len - $scope.limitToNum);
+      const len = $scope.totalStat.up;
+      if ($scope.lists.uploadJobListLimit < len) {
+        $scope.lists.uploadJobListLimit += Math.min(100, len - $scope.lists.uploadJobListLimit);
       }
     }
 
@@ -70,15 +58,23 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
 
     function checkStartJob(item, force) {
       if (force) {
-        item.start(true);
+        ipcUploadManager.startJob({
+          jobId: item.id,
+          forceOverwrite: force,
+        });
       } else {
-        item.wait();
+        ipcUploadManager.waitJob({
+          jobId: item.id,
+        });
       }
-
-      // TODO: send IPC to schedule upload jobs
     }
 
-    // TODO: rename to `removeJobConfirm`
+    function stopItem(item) {
+      ipcUploadManager.stopJob({
+        jobId: item.id,
+      });
+    }
+
     function showRemoveItem(item) {
       if (item.status === "finished") {
         doRemove(item);
@@ -99,11 +95,13 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
     }
 
     function doRemove(item) {
-      // TODO: send IPC to remove upload jobs
+      ipcUploadManager.removeJob({
+        jobId: item.id,
+      });
     }
 
     function clearAllCompleted() {
-      // TODO: send IPC to cleanup upload jobs
+      ipcUploadManager.cleanUpJobs();
     }
 
     function clearAll() {
@@ -119,59 +117,34 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
         message,
         (btn) => {
           if (btn) {
-            // TODO: send IPC to remove all upload jobs
+            ipcUploadManager.removeAllJobs();
           }
         },
         1
       );
     }
 
-    let stopFlag = false;
-
     function stopAll() {
-      const arr = $scope.lists.uploadJobList;
-      if (arr && arr.length > 0) {
-        stopFlag = true;
+      Toast.info(T("pause.on")); //'正在暂停...'
+      $scope.allActionBtnDisabled = true;
 
-        Toast.info(T("pause.on")); //'正在暂停...'
-        $scope.allActionBtnDisabled = true;
+      ipcUploadManager.stopAllJobs()
 
-        // TODO: send IPC stop creating and stop all running upload jobs
+      Toast.info(T("pause.success"));
 
-        Toast.info(T("pause.success"));
-
-        $timeout(function () {
-          $scope.allActionBtnDisabled = false;
-        }, 100);
-      }
+      $timeout(function () {
+        $scope.allActionBtnDisabled = false;
+      }, 100);
     }
 
     function startAll() {
-      const arr = $scope.lists.uploadJobList;
-      stopFlag = false;
-      //串行
-      if (arr && arr.length > 0) {
-        $scope.allActionBtnDisabled = true;
-        DelayDone.seriesRun(
-          arr,
-          function (n, fn) {
-            if (stopFlag) {
-              return;
-            }
+      $scope.allActionBtnDisabled = true;
 
-            if (n && (n.status === "stopped" || n.status === "failed")) {
-              n.wait();
-            }
+      ipcUploadManager.startAllJobs()
 
-            // TODO: send IPC to schedule upload jobs
-
-            fn();
-          },
-          function doneFn() {
-            $scope.allActionBtnDisabled = false;
-          }
-        );
-      }
+      $timeout(function () {
+        $scope.allActionBtnDisabled = false;
+      }, 100);
     }
   }
 ]);

@@ -1,13 +1,17 @@
+import fs from "fs";
+import path from "path";
 import { ipcRenderer } from "electron";
 import angular from "angular"
 
-import { UploadAction, UploadActionFns } from "@common/ipc-actions/upload";
+import ByteSize from "@common/const/byte-size";
+import { UploadAction } from "@common/ipc-actions/upload";
 
 import webModule from '@/app-module/web'
 
 import * as AuthInfo from '@/components/services/authinfo';
-import safeApply from '@/components/services/safe-apply'
-
+import Settings from '@/components/services/settings';
+import safeApply from '@/components/services/safe-apply';
+import ipcUploadManager from '@/components/services/ipc-upload-manager';
 
 import NgConfig from '@/ng-config'
 import DownloadMgr from '@/components/services/download-manager'
@@ -23,6 +27,7 @@ import './downloads'
 import './uploads'
 
 import './frame.css'
+import {Status} from "@common/models/job/types";
 
 const TRANSFER_FRAME_CONTROLLER_NAME = 'transferFrameCtrl'
 
@@ -43,14 +48,18 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
   ) {
     const T = $translate.instant;
     let uploaderTimer;
-    const ipcUploadManager = new UploadActionFns(ipcRenderer, "UploaderManager");
 
     angular.extend($scope, {
       transTab: 1,
 
+      transSearch: {
+        uploadJob: "",
+      },
+
       lists: {
         uploadJobList: [],
-        downloadJobList: []
+        uploadJobListLimit: 100,
+        downloadJobList: [],
       },
       emptyFolderUploading: {
         enabled: localStorage.getItem(EMPTY_FOLDER_UPLOADING) || true,
@@ -79,7 +88,7 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
     $scope.handlers.uploadFilesHandler = uploadFilesHandler;
     $scope.handlers.downloadFilesHandler = downloadFilesHandler;
 
-    subscribeUploaderIpc();
+    initUploaderIpc();
     DownloadMgr.init($scope);
 
     $scope.$on('$destroy', () => {
@@ -87,7 +96,7 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
     });
 
     // init Uploader IPC
-    function subscribeUploaderIpc() {
+    function initUploaderIpc() {
       ipcRenderer.on("UploaderManager-reply", (_event, message) => {
         safeApply($scope, () => {
           switch (message.action) {
@@ -106,12 +115,55 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
           }
         });
       });
+      ipcUploadManager.updateConfig({
+        resumeUpload: Settings.resumeUpload !== 0,
+        maxConcurrency: Settings.maxUploadConcurrency,
+        multipartUploadSize: Settings.multipartUploadSize * ByteSize.MB,
+        multipartUploadThreshold: Settings.multipartUploadThreshold * ByteSize.MB,
+        uploadSpeedLimit: Settings.uploadSpeedLimitEnabled * ByteSize.KB,
+        isDebug: Settings.isDebug !== 0,
+        persistPath: getProgFilePath(),
+      });
+      ipcUploadManager.loadPersistJobs({
+        clientOptions: {
+          accessKey: AuthInfo.get().id,
+          secretKey: AuthInfo.get().secret,
+          ucUrl: NgConfig.ucUrl || "",
+          regions: NgConfig.regions || [],
+        },
+        uploadOptions: {
+          userNatureLanguage: localStorage.getItem("lang") || "zh-CN",
+        },
+      });
       uploaderTimer = setInterval(() => {
+        let query;
+        if ($scope.transSearch.uploadJob) {
+          if (Object.values(Status).includes($scope.transSearch.uploadJob.trim())) {
+            query = {
+              status: $scope.transSearch.uploadJob.trim(),
+            };
+          } else {
+            query = {
+              name: $scope.transSearch.uploadJob.trim(),
+            };
+          }
+        }
         ipcUploadManager.updateUiData({
           pageNum: 0,
-          count: 10,
+          count: $scope.lists.uploadJobListLimit,
+          query: query,
         });
       }, 1000);
+
+      function getProgFilePath() {
+        const folder = Global.config_path;
+        if (!fs.existsSync(folder)) {
+          fs.mkdirSync(folder);
+        }
+
+        const username = AuthInfo.get().id || "kodo-browser";
+        return path.join(folder, "upprog_" + username + ".json");
+      }
     }
 
     /**
@@ -132,6 +184,8 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
           regionId: bucketInfo.regionId,
           isOverwrite: uploadOptions.isOverwrite,
           storageClassName: uploadOptions.storageClassName,
+          storageClasses: bucketInfo.availableStorageClasses,
+          userNatureLanguage: localStorage.getItem('lang') || 'zh-CN',
         },
         clientOptions: {
           accessKey: AuthInfo.get().id,
@@ -139,27 +193,8 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
           ucUrl: ngConfig.ucUrl || "",
           regions: ngConfig.regionId || [],
           backendMode: bucketInfo.qiniuBackendMode,
-          storageClasses: bucketInfo.availableStorageClasses,
         },
       });
-
-      // old logic
-      // UploadMgr.createUploadJobs(filePaths, bucketInfo, uploadOptions, function (isCancelled) {
-      //   Toast.info(T("upload.addtolist.success"));
-      //
-      //   $scope.transTab = 1;
-      //   $scope.toggleTransVisible(true);
-      //
-      //   AuditLog.log(
-      //     AuditLog.Action.UploadFilesStart,
-      //     {
-      //       regionId: bucketInfo.region,
-      //       bucket: bucketInfo.bucketName,
-      //       to: bucketInfo.key,
-      //       from: filePaths,
-      //     },
-      //   );
-      // });
     }
 
     /**

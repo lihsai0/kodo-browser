@@ -240,7 +240,8 @@ ipcMain.on("UploaderManager", (event, message) => {
     console.log("lihs debug:", "main fork UploaderProcess");
     uploaderProcess = fork(
         path.join(root, "main", "uploader-bundle.js"),
-        [],
+        // is there a better way to pass parameters?
+        ['--config-json', JSON.stringify({resumeUpload: true, maxConcurrency: 5})],
         {
           cwd: root,
           silent: false,
