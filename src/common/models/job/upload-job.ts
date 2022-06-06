@@ -9,12 +9,12 @@ import {RecoveredOption} from "kodo-s3-adapter-sdk/dist/uploader";
 import {NatureLanguage} from "kodo-s3-adapter-sdk/dist/uplog";
 
 import Duration from "@common/const/duration";
+import ByteSize from "@common/const/byte-size";
 import * as AppConfig from "@common/const/app-config";
 
 import {BackendMode, Status, UploadedPart} from "./types";
 import Base from "./base"
 import * as Utils from "./utils";
-import ByteSize from "@common/const/byte-size";
 
 // if change options, remember to check PersistInfo
 interface RequiredOptions {
@@ -383,6 +383,7 @@ export default class UploadJob extends Base {
 
         let lastTimestamp = new Date().getTime();
         let lastLoaded = this.prog.loaded;
+        let zeroSpeedCounter = 0;
         const intervalDuration = Duration.Second;
         this.speedTimerId = setInterval(() => {
             if (this.isNotRunning) {
@@ -391,15 +392,21 @@ export default class UploadJob extends Base {
             }
 
             const nowTimestamp = new Date().getTime();
+            const currentSpeed = (this.prog.loaded - lastLoaded) / ((nowTimestamp - lastTimestamp) / Duration.Second);
+            if (currentSpeed < 1 && zeroSpeedCounter < 3) {
+                zeroSpeedCounter += 1;
+                return;
+            }
 
-            this.speed = (this.prog.loaded - lastLoaded) / ((nowTimestamp - lastTimestamp) / Duration.Second);
+            this.speed = Math.round(currentSpeed);
             this.predictLeftTime = Math.max(
-                (this.prog.total - this.prog.loaded) / this.speed * Duration.Second,
+                Math.round((this.prog.total - this.prog.loaded) / this.speed) * Duration.Second,
                 0,
             );
 
             lastLoaded = this.prog.loaded;
             lastTimestamp = nowTimestamp;
+            zeroSpeedCounter = 0;
         }, intervalDuration) as unknown as number; // hack type problem of nodejs and browser
     }
 

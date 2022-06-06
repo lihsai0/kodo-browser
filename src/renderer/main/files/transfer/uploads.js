@@ -54,6 +54,9 @@ webModule.controller(TRANSFER_UPLOAD_CONTROLLER_NAME, [
     function triggerEmptyFolder() {
       $scope.emptyFolderUploading.enabled = !$scope.emptyFolderUploading.enabled;
       localStorage.setItem(EMPTY_FOLDER_UPLOADING, $scope.emptyFolderUploading.enabled);
+      ipcUploadManager.updateConfig({
+        isSkipEmptyDirectory: !$scope.emptyFolderUploading.enabled,
+      });
     }
 
     function checkStartJob(item, force) {

@@ -92,7 +92,6 @@ process.on("message", (message: UploadMessage) => {
 
 process.on("exit", () => {
     uploadManager.persistJobs(true);
-    console.log('lihs debug: exit');
 });
 
 // // if all jobs done, wait a while instead of exiting process.

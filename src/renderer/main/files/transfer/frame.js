@@ -62,7 +62,9 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
         downloadJobList: [],
       },
       emptyFolderUploading: {
-        enabled: localStorage.getItem(EMPTY_FOLDER_UPLOADING) || true,
+        enabled: localStorage.getItem(EMPTY_FOLDER_UPLOADING) !== null
+          ? localStorage.getItem(EMPTY_FOLDER_UPLOADING)
+          : true,
       },
       overwriteDownloading: {
         enabled: localStorage.getItem(OVERWRITE_DOWNLOADING) || false,
@@ -106,7 +108,6 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
               $scope.totalStat.upDone = message.data.finished;
               $scope.totalStat.upFailed = message.data.failed;
               $scope.totalStat.upStopped = message.data.stopped;
-              // console.log("lihs debug:", "renderer update ui by", message.data);
               break;
             }
             default: {
@@ -122,6 +123,7 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
         multipartUploadThreshold: Settings.multipartUploadThreshold * ByteSize.MB,
         uploadSpeedLimit: Settings.uploadSpeedLimitEnabled * ByteSize.KB,
         isDebug: Settings.isDebug !== 0,
+        isSkipEmptyDirectory: $scope.emptyFolderUploading.enabled,
         persistPath: getProgFilePath(),
       });
       ipcUploadManager.loadPersistJobs({

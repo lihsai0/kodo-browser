@@ -237,7 +237,6 @@ ipcMain.on("UploaderManager", (event, message) => {
   const processName = "UploaderProcess";
   let uploaderProcess = forkedWorkers.get(processName);
   if (!uploaderProcess) {
-    console.log("lihs debug:", "main fork UploaderProcess");
     uploaderProcess = fork(
         path.join(root, "main", "uploader-bundle.js"),
         // is there a better way to pass parameters?
@@ -251,7 +250,6 @@ ipcMain.on("UploaderManager", (event, message) => {
 
     uploaderProcess.on("exit", () => {
       forkedWorkers.delete(processName)
-      console.log("lihs debug:", "main received UploaderProcess exit");
     });
 
     uploaderProcess.on("message", (message) => {

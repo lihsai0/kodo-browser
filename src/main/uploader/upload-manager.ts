@@ -3,11 +3,14 @@ import fs, {Stats} from "fs";
 import lodash from "lodash";
 // @ts-ignore
 import Walk from "@root/walk";
+import {Adapter} from "kodo-s3-adapter-sdk/dist/adapter";
 
 import ByteSize from "@common/const/byte-size";
 import {UploadJob} from "@common/models/job";
 import {ClientOptions, DestInfo, UploadOptions} from "@common/ipc-actions/upload";
 import {Status} from "@common/models/job/types";
+
+import createQiniuClient from "../util/createClient";
 import {MAX_MULTIPART_COUNT, MIN_MULTIPART_SIZE} from "./boundary-const";
 
 // for walk
@@ -23,19 +26,20 @@ interface ManagerConfig {
     multipartUploadThreshold: number, // Bytes
     uploadSpeedLimit: number, // Bytes/s
     isDebug: boolean,
-    // TODO: check if need be required. seems shouldn't persist, if don't remember user
+    isSkipEmptyDirectory: boolean
     persistPath: string,
 
     onError: (err: Error) => void,
 }
 
 const defaultManagerConfig: ManagerConfig = {
-    isDebug: false,
+    resumeUpload: false,
     maxConcurrency: 10,
     multipartUploadSize: 4 * ByteSize.MB, // 4MB
     multipartUploadThreshold: 10 * ByteSize.MB, // 10MB
-    resumeUpload: false,
     uploadSpeedLimit: 0,
+    isDebug: false,
+    isSkipEmptyDirectory: false,
     persistPath: "",
     onError: () => {},
 }
@@ -109,14 +113,24 @@ export default class UploadManager {
             jobsAdded?: () => void,
         },
     ) {
+        const qiniu = createQiniuClient(
+            clientOptions,
+            {
+                userNatureLanguage: uploadOptions.userNatureLanguage,
+                isDebug: this.config.isDebug,
+            },
+        );
         const walk = Walk.create({
             withFileStats: true,
         });
+
         for (const filePathname of filePathnameList) {
-            // TODO:
-            //  can't use walk because we need to determine whether the directory is empty.
-            //  and in this electron version(nodejs v10.x) must read the directory again.
-            //  it's too waste.
+            const directoryToCreate = new Map<string, boolean>();
+            const remoteBaseDirectory = destInfo.key.endsWith("/")
+                ? destInfo.key.slice(0, -1)
+                : destInfo.key;
+            const localBaseDirectory = path.dirname(filePathname);
+
             await walk(
                 filePathname,
                 async (err: Error, walkingPathname: string, statsWithName: StatsWithName): Promise<void> => {
@@ -125,37 +139,56 @@ export default class UploadManager {
                         return
                     }
 
-                    const remoteBaseDirectory = destInfo.key.endsWith("/")
-                        ? destInfo.key.slice(0, -1)
-                        : destInfo.key;
-                    const localParentDirectory = path.dirname(filePathname);
-
-                    // remoteKey should be "path/to/file"
-                    // TODO: check on windows, seems need .replace(/\\/, "/")
-                    let remoteKey = remoteBaseDirectory + walkingPathname.slice(localParentDirectory.length);
+                    // remoteKey should be "path/to/file" not "/path/to/file"
+                    // TODO: check remote variables on windows, seems need .replace(/\\/, "/")
+                    let remoteKey = remoteBaseDirectory + walkingPathname.slice(localBaseDirectory.length);
                     remoteKey = remoteKey.startsWith("/") ? remoteKey.slice(1) : remoteKey;
 
+                    // if enable skip empty directory upload.
+                    const remoteDirectoryKey = path.dirname(remoteKey) + "/";
+                    if (remoteDirectoryKey !== "./" && !directoryToCreate.get(remoteDirectoryKey)) {
+                        this.createDirectory(
+                            qiniu,
+                            {
+                                region: uploadOptions.regionId,
+                                bucketName: destInfo.bucketName,
+                                key: remoteDirectoryKey,
+                                directoryName: path.basename(remoteDirectoryKey),
+                            },
+                        );
+                        directoryToCreate.set(remoteDirectoryKey, true);
+                    }
+
                     if (statsWithName.isDirectory()) {
-                        console.log("lihs debug:", "QiniuClient.createFolder()", remoteKey);
+                        //  we need to determine whether the directory is empty.
+                        //  and in this electron version(nodejs v10.x) read the directory again
+                        //  is too waste. so we create later.
+                        //  if we are nodejs > v12.12，use opendir API to determine empty.
+                        if (!this.config.isSkipEmptyDirectory) {
+                            const remoteDirectoryKey = remoteKey + "/";
+                            this.createDirectory(
+                                qiniu,
+                                {
+                                    region: uploadOptions.regionId,
+                                    bucketName: destInfo.bucketName,
+                                    key: remoteDirectoryKey,
+                                    directoryName: statsWithName.name,
+                                },
+                            );
+                            directoryToCreate.set(remoteDirectoryKey, true);
+                        }
                     } else if (statsWithName.isFile()) {
-                        console.group("lihs debug:", "UploadManager.createUploadJob()", remoteKey);
-                        // console.log("lihs debug:", "destInfo", destInfo);
-                        console.log("lihs debug:", "uploadOptions", uploadOptions);
-                        console.log("lihs debug:", "clientOptions", clientOptions);
                         const from = {
                             name: statsWithName.name,
                             path: walkingPathname,
                             size: statsWithName.size,
                             mtime: statsWithName.mtime.getTime(),
                         };
-                        // console.log("lihs debug:", "from", from);
                         const to = {
                             bucket: destInfo.bucketName,
                             key: remoteKey,
                         };
-                        // console.log("lihs debug:", "to", to);
                         this.createUploadJob(from, to, uploadOptions, clientOptions);
-                        console.groupEnd();
 
                         // post add job
                         hooks?.jobsAdding?.();
@@ -169,13 +202,37 @@ export default class UploadManager {
         hooks?.jobsAdded?.();
     }
 
+    private async createDirectory(
+        client: Adapter,
+        options: {
+            region: string,
+            bucketName: string,
+            key: string,
+            directoryName: string,
+        },
+    ) {
+        await client.enter("createFolder", async client => {
+            await client.putObject(
+                options.region,
+                {
+                    bucket: options.bucketName,
+                    key: options.key,
+                },
+                Buffer.alloc(0),
+                options.directoryName,
+            );
+        }, {
+            targetBucket: options.bucketName,
+            targetKey: options.key,
+        });
+    }
+
     private createUploadJob(
         from: Required<UploadJob["options"]["from"]>,
         to: UploadJob["options"]["to"],
         uploadOptions: UploadOptions,
         clientOptions: ClientOptions,
     ): void {
-        // TODO: parts count and part size should move to sdk?
         // parts count
         const partsCount = Math.ceil(from.size / this.config.multipartUploadSize);
 
@@ -230,7 +287,6 @@ export default class UploadManager {
             return false;
         });
         job.on("complete", () => {
-            console.log("lihs debug:", "complete");
             this.persistJobs();
             return false;
         });
@@ -273,7 +329,6 @@ export default class UploadManager {
 
     public persistJobs(force: boolean = false): void {
         if (force) {
-            console.log("lihs debug:", "_persistJobs force");
             this._persistJobs();
             return;
         }
@@ -283,7 +338,6 @@ export default class UploadManager {
     private _persistJobsThrottle = lodash.throttle(this._persistJobs, 1000);
 
     private _persistJobs(): void {
-        console.log("lihs debug:", "_persistJobs");
         if (!this.config.persistPath) {
             return;
         }
@@ -446,14 +500,7 @@ export default class UploadManager {
                 continue;
             }
             this.concurrency += 1;
-            if (job.prog.resumable) {
-                console.log("lihs debug:", "resumable", job.id);
-            }
-            console.log("lihs debug:", "job.start()");
             job.start()
-                .catch(err => {
-                    console.log("lihs debug:", "job.start() err:", err);
-                })
                 .finally(() => {
                     this.afterJobDone(job.id);
                 });
@@ -465,8 +512,7 @@ export default class UploadManager {
         }
     }
 
-    private afterJobDone(id: UploadJob["id"]): void {
-        console.log("lihs debug:", "job done", id);
+    private afterJobDone(_id: UploadJob["id"]): void {
         this.concurrency -= 1;
         this.scheduleJobs();
     }

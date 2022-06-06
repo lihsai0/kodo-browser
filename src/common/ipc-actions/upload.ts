@@ -1,7 +1,8 @@
 import {IpcRenderer} from "electron";
 import {Region} from "kodo-s3-adapter-sdk";
 import {NatureLanguage} from "kodo-s3-adapter-sdk/dist/uplog";
-import {BackendMode, Status} from "@common/models/job/types";
+import {BackendMode} from "@common/const/qiniu";
+import {Status} from "@common/models/job/types";
 import StorageClass from "@common/models/storage-class";
 
 // some types maybe should in models
@@ -54,6 +55,7 @@ export interface UpdateConfigMessage {
         multipartUploadThreshold: number, // Bytes
         uploadSpeedLimit: number, // Bytes/s
         isDebug: boolean,
+        isSkipEmptyDirectory: boolean,
         persistPath: string,
     }>,
 }
