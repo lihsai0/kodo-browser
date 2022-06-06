@@ -4,16 +4,16 @@ import {NatureLanguage} from "kodo-s3-adapter-sdk/dist/uplog";
 import {BackendMode} from "@common/const/qiniu";
 import {Status} from "@common/models/job/types";
 import StorageClass from "@common/models/storage-class";
+import {UploadJob} from "@common/models/job";
 
 // some types maybe should in models
 export interface DestInfo {
+    regionId: string,
     bucketName: string,
-    // regionId: string, // TODO: seems useless
     key: string,
 }
 
 export interface UploadOptions {
-    regionId: string,
     isOverwrite: boolean,
     storageClassName: StorageClass["kodoName"],
     storageClasses: StorageClass[],
@@ -34,7 +34,6 @@ export enum UploadAction {
     UpdateConfig = "UpdateConfig",
     LoadPersistJobs = "LoadPersistJobs",
     AddJobs = "AddJobs",
-    UpdateUiData = "UpdateUiData",
     StopJob = "StopJob",
     WaitJob = "WaitJob",
     StartJob = "StartJob",
@@ -43,6 +42,13 @@ export enum UploadAction {
     StartAllJobs = "StartAllJobs",
     StopAllJobs = "StopAllJobs",
     RemoveAllJobs = "RemoveAllJobs",
+
+    // common
+    UpdateUiData = "UpdateUiData",
+
+    // reply only
+    AddedJobs = "AddedJobs",
+    JobCompleted = "JobCompleted"
 }
 
 // actions with payload data
@@ -84,6 +90,18 @@ export interface UpdateUiDataMessage {
         pageNum: number,
         count: number,
         query?: { status?: Status, name?: string },
+    },
+}
+
+export interface UpdateUiDataReplyMessage {
+    action: UploadAction.UpdateUiData,
+    data: {
+        list: (UploadJob["uiData"] | undefined)[],
+        total: number,
+        finished: number,
+        running: number,
+        failed: number,
+        stopped: number,
     },
 }
 
@@ -134,6 +152,22 @@ export interface StopAllJobsMessage {
 export interface RemoveAllJobsMessage {
     action: UploadAction.RemoveAllJobs,
     data?: {}
+}
+
+export interface AddedJobsReplyMessage {
+    action: UploadAction.AddedJobs,
+    data: {
+        filePathnameList: string[],
+        destInfo: DestInfo,
+    }
+}
+
+export interface JobCompletedReplyMessage {
+    action: UploadAction.JobCompleted,
+    data: {
+        jobId: string,
+        jobUiData: UploadJob["uiData"],
+    }
 }
 
 export type UploadMessage = UpdateConfigMessage

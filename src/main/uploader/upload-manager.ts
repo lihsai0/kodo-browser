@@ -29,7 +29,8 @@ interface ManagerConfig {
     isSkipEmptyDirectory: boolean
     persistPath: string,
 
-    onError: (err: Error) => void,
+    onError?: (err: Error) => void,
+    onJobDone?: (id: string, job?: UploadJob) => void,
 }
 
 const defaultManagerConfig: ManagerConfig = {
@@ -41,7 +42,6 @@ const defaultManagerConfig: ManagerConfig = {
     isDebug: false,
     isSkipEmptyDirectory: false,
     persistPath: "",
-    onError: () => {},
 }
 
 export default class UploadManager {
@@ -135,7 +135,7 @@ export default class UploadManager {
                 filePathname,
                 async (err: Error, walkingPathname: string, statsWithName: StatsWithName): Promise<void> => {
                     if (err) {
-                        this.config.onError(err);
+                        this.config.onError?.(err);
                         return
                     }
 
@@ -150,7 +150,7 @@ export default class UploadManager {
                         this.createDirectory(
                             qiniu,
                             {
-                                region: uploadOptions.regionId,
+                                region: destInfo.regionId,
                                 bucketName: destInfo.bucketName,
                                 key: remoteDirectoryKey,
                                 directoryName: path.basename(remoteDirectoryKey),
@@ -169,7 +169,7 @@ export default class UploadManager {
                             this.createDirectory(
                                 qiniu,
                                 {
-                                    region: uploadOptions.regionId,
+                                    region: destInfo.regionId,
                                     bucketName: destInfo.bucketName,
                                     key: remoteDirectoryKey,
                                     directoryName: statsWithName.name,
@@ -188,7 +188,7 @@ export default class UploadManager {
                             bucket: destInfo.bucketName,
                             key: remoteKey,
                         };
-                        this.createUploadJob(from, to, uploadOptions, clientOptions);
+                        this.createUploadJob(from, to, uploadOptions, clientOptions, destInfo.regionId);
 
                         // post add job
                         hooks?.jobsAdding?.();
@@ -232,6 +232,7 @@ export default class UploadManager {
         to: UploadJob["options"]["to"],
         uploadOptions: UploadOptions,
         clientOptions: ClientOptions,
+        regionId: string,
     ): void {
         // parts count
         const partsCount = Math.ceil(from.size / this.config.multipartUploadSize);
@@ -267,7 +268,7 @@ export default class UploadManager {
             storageClasses: uploadOptions.storageClasses,
 
             overwrite: uploadOptions.isOverwrite,
-            region: uploadOptions.regionId,
+            region: regionId,
             storageClassName: uploadOptions.storageClassName,
 
             multipartUploadSize: partSize,
@@ -296,7 +297,7 @@ export default class UploadManager {
     }
 
     public getJobsUiDataByPage(pageNum: number = 0, count: number = 10, query?: { status?: Status, name?: string }) {
-        let list;
+        let list: (UploadJob["uiData"] | undefined)[];
         if (query) {
             list = this.jobIds.map(id => this.jobs.get(id)?.uiData)
                 .filter(job => {
@@ -370,12 +371,12 @@ export default class UploadManager {
                 }
 
                 if (!persistedJob.from) {
-                    this.config.onError(new Error("load jobs from storage error: lost job.from"));
+                    this.config.onError?.(new Error("load jobs from storage error: lost job.from"));
                     return;
                 }
 
                 if (!fs.existsSync(persistedJob.from.path)) {
-                    this.config.onError(new Error(`load jobs from storage error: local file not found\nfile path: ${persistedJob.from.path}`));
+                    this.config.onError?.(new Error(`load jobs from storage error: local file not found\nfile path: ${persistedJob.from.path}`));
                     return;
                 }
 
@@ -512,8 +513,9 @@ export default class UploadManager {
         }
     }
 
-    private afterJobDone(_id: UploadJob["id"]): void {
+    private afterJobDone(id: UploadJob["id"]): void {
         this.concurrency -= 1;
         this.scheduleJobs();
+        this.config.onJobDone?.(id, this.jobs.get(id));
     }
 }

@@ -1,9 +1,18 @@
-import {UploadAction, UploadMessage} from "@common/ipc-actions/upload";
+import {
+    AddedJobsReplyMessage,
+    JobCompletedReplyMessage,
+    UpdateUiDataReplyMessage,
+    UploadAction,
+    UploadMessage
+} from "@common/ipc-actions/upload";
 import UploadManager from "./upload-manager";
+import {UploadJob} from "@common/models/job";
+import {Status} from "@common/models/job/types";
 
 // initial UploadManager Config from argv after `--config-json`
 const configStr = process.argv.find((_arg, i, arr) => arr[i - 1] === "--config-json");
 const uploadManagerConfig = configStr ? JSON.parse(configStr) : {};
+uploadManagerConfig.onJobDone = handleJobDone;
 const uploadManager = new UploadManager(uploadManagerConfig);
 
 process.on("uncaughtException", (err) => {
@@ -34,20 +43,31 @@ process.on("message", (message: UploadMessage) => {
                     jobsAdding: () => {
                         uploadManager.persistJobs();
                     },
+                    jobsAdded: () => {
+                        const replyMessage: AddedJobsReplyMessage = {
+                            action: UploadAction.AddedJobs,
+                            data: {
+                                filePathnameList: message.data.filePathnameList,
+                                destInfo: message.data.destInfo,
+                            },
+                        }
+                        process.send?.(replyMessage);
+                    }
                 }
             );
             // TODO: .then send all jobs added
             break;
         }
         case UploadAction.UpdateUiData: {
-            process.send?.({
+            const replyMessage: UpdateUiDataReplyMessage = {
                 action: UploadAction.UpdateUiData,
                 data: uploadManager.getJobsUiDataByPage(
                     message.data.pageNum,
                     message.data.count,
                     message.data.query,
                 ),
-            });
+            }
+            process.send?.(replyMessage);
             break;
         }
         case UploadAction.StopJob: {
@@ -93,6 +113,19 @@ process.on("message", (message: UploadMessage) => {
 process.on("exit", () => {
     uploadManager.persistJobs(true);
 });
+
+function handleJobDone(jobId: string, job?: UploadJob) {
+    if (job?.status === Status.Finished) {
+        const jobCompletedReplayMessage: JobCompletedReplyMessage = {
+            action: UploadAction.JobCompleted,
+            data: {
+                jobId,
+                jobUiData: job.uiData,
+            }
+        }
+        process.send?.(jobCompletedReplayMessage);
+    }
+}
 
 // // if all jobs done, wait a while instead of exiting process.
 // let exitTimer: NodeJS.Timeout | undefined;

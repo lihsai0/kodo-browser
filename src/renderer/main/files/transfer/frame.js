@@ -110,8 +110,36 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
               $scope.totalStat.upStopped = message.data.stopped;
               break;
             }
+            case UploadAction.AddedJobs: {
+              Toast.info(T("upload.addtolist.success"));
+              $scope.transTab = 1;
+              $scope.toggleTransVisible(true);
+              AuditLog.log(
+                  AuditLog.Action.UploadFilesStart,
+                  {
+                    regionId: message.data.destInfo.regionId,
+                    bucket: message.data.destInfo.bucketName,
+                    to: message.data.destInfo.key,
+                    from: message.data.filePathnameList,
+                  },
+              );
+              break;
+            }
+            case UploadAction.JobCompleted: {
+              const parentDirectoryKey = message.data.jobUiData.to.key
+                .split("/")
+                .slice(0, -1)
+                .join("/");
+              if (
+                $scope.currentInfo.bucketName === message.data.jobUiData.to.bucket &&
+                $scope.currentInfo.key === parentDirectoryKey
+              ) {
+                $scope.$emit('refreshFilesList');
+              }
+              break;
+            }
             default: {
-              console.warn("renderer received unknown action, message:", message);
+              console.warn("renderer received unknown/unhandled action, message:", message);
             }
           }
         });
