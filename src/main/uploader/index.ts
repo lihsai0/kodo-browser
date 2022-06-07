@@ -55,7 +55,6 @@ process.on("message", (message: UploadMessage) => {
                     }
                 }
             );
-            // TODO: .then send all jobs added
             break;
         }
         case UploadAction.UpdateUiData: {

@@ -33,17 +33,21 @@ interface RequiredOptions {
     overwrite: boolean,
     storageClassName: StorageClass["kodoName"],
     storageClasses: StorageClass[],
+}
+
+interface UploadOptions {
+    multipartUploadThreshold: number, // Bytes
+    multipartUploadSize: number, // Bytes
+    uploadSpeedLimit: number, // Bytes/s
+
+    isDebug: boolean,
 
     // could be removed if there is a better uplog
     userNatureLanguage: NatureLanguage,
 }
 
-interface OptionalOptions {
+interface OptionalOptions extends UploadOptions{
     id: string,
-    maxConcurrency: number,
-    multipartUploadThreshold: number, // Bytes
-    multipartUploadSize: number, // Bytes
-    uploadSpeedLimit: number, // Bytes/s
     uploadedId: string,
     uploadedParts: UploadedPart[],
 
@@ -56,7 +60,6 @@ interface OptionalOptions {
     },
 
     message: string,
-    isDebug: boolean,
 }
 
 export type Options = RequiredOptions & Partial<OptionalOptions>
@@ -64,7 +67,6 @@ export type Options = RequiredOptions & Partial<OptionalOptions>
 const DEFAULT_OPTIONS: OptionalOptions = {
     id: '',
 
-    maxConcurrency: 10,
     multipartUploadThreshold: 10 * ByteSize.MB,
     multipartUploadSize: 4 * ByteSize.MB,
     uploadSpeedLimit: 0, // 0 means no limit
@@ -80,6 +82,8 @@ const DEFAULT_OPTIONS: OptionalOptions = {
 
     message: "",
     isDebug: false,
+
+    userNatureLanguage: "zh-CN",
 };
 
 type PersistInfo = {
@@ -102,6 +106,8 @@ type PersistInfo = {
         PartNumber: UploadedPart['partNumber'],
         ETag: UploadedPart['etag'],
     }[],
+    multipartUploadThreshold: OptionalOptions["multipartUploadThreshold"],
+    multipartUploadSize: OptionalOptions["multipartUploadSize"],
 }
 
 export default class UploadJob extends Base {
@@ -109,18 +115,41 @@ export default class UploadJob extends Base {
         id: string,
         persistInfo: PersistInfo,
         clientOptions: RequiredOptions['clientOptions'],
-        userNatureLanguage: RequiredOptions['userNatureLanguage'],
+        uploadOptions: {
+            uploadSpeedLimit: number,
+            isDebug: boolean,
+            userNatureLanguage: NatureLanguage,
+        },
     ): UploadJob {
         return new UploadJob({
-            ...persistInfo,
             id,
+            status: persistInfo.status,
+            message: persistInfo.message,
+
+            from: persistInfo.from,
+            to: persistInfo.to,
+            prog: persistInfo.prog,
+
             clientOptions,
-            userNatureLanguage,
+            storageClasses: persistInfo.storageClasses,
+
+            overwrite: persistInfo.overwrite,
+            region: persistInfo.region,
+            storageClassName: persistInfo.storageClassName,
+
+            uploadedId: persistInfo.uploadedId,
             uploadedParts: persistInfo.uploadedParts.map(part => ({
                 partNumber: part.PartNumber,
                 etag: part.ETag,
             })),
-        })
+
+            multipartUploadThreshold: persistInfo.multipartUploadThreshold,
+            multipartUploadSize: persistInfo.multipartUploadSize,
+            uploadSpeedLimit: uploadOptions.uploadSpeedLimit,
+            isDebug: uploadOptions.isDebug,
+
+            userNatureLanguage: uploadOptions.userNatureLanguage,
+        });
     }
 
     // - create options -
@@ -230,7 +259,6 @@ export default class UploadJob extends Base {
 
         if (this.options.isDebug) {
             console.log(`Try uploading ${this.options.from.path} to kodo://${this.options.to.bucket}/${this.options.to.key}`);
-            // console.log(`[JOB] sched starting => ${JSON.stringify(job)}`)
         }
 
         this.message = ""
@@ -238,7 +266,6 @@ export default class UploadJob extends Base {
         this._status = Status.Running;
 
         // create client
-        // TODO: reuse client
         const qiniu = new Qiniu(
             this.options.clientOptions.accessKey,
             this.options.clientOptions.secretKey,
@@ -256,9 +283,9 @@ export default class UploadJob extends Base {
                 // because there isn't a valid access key of uplog
                 uplogBufferSize: this.options.clientOptions.ucUrl ? -1 : undefined,
                 requestCallback: () => {
-                }, // TODO
+                },
                 responseCallback: () => {
-                }, // TODO
+                },
             },
         );
 
@@ -462,6 +489,8 @@ export default class UploadJob extends Base {
             uploadedParts: this.uploadedParts.map((part) => {
                 return {PartNumber: part.partNumber, ETag: part.etag};
             }),
+            multipartUploadThreshold: this.options.multipartUploadThreshold,
+            multipartUploadSize: this.options.multipartUploadSize,
         };
     }
 }

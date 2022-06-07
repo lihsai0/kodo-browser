@@ -271,8 +271,8 @@ export default class UploadManager {
             region: regionId,
             storageClassName: uploadOptions.storageClassName,
 
-            multipartUploadSize: partSize,
             multipartUploadThreshold: this.config.multipartUploadThreshold,
+            multipartUploadSize: partSize,
             uploadSpeedLimit: this.config.uploadSpeedLimit,
             isDebug: this.config.isDebug,
 
@@ -409,7 +409,11 @@ export default class UploadManager {
                         ...clientOptions,
                         backendMode: persistedJob.backendMode,
                     },
-                    uploadOptions.userNatureLanguage,
+                    {
+                        uploadSpeedLimit: this.config.uploadSpeedLimit,
+                        isDebug: this.config.isDebug,
+                        userNatureLanguage: uploadOptions.userNatureLanguage,
+                    },
                 );
 
                 if (job.status === Status.Running) {

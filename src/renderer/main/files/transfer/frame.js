@@ -63,11 +63,11 @@ webModule.controller(TRANSFER_FRAME_CONTROLLER_NAME, [
       },
       emptyFolderUploading: {
         enabled: localStorage.getItem(EMPTY_FOLDER_UPLOADING) !== null
-          ? localStorage.getItem(EMPTY_FOLDER_UPLOADING)
+          ? localStorage.getItem(EMPTY_FOLDER_UPLOADING) === "true"
           : true,
       },
       overwriteDownloading: {
-        enabled: localStorage.getItem(OVERWRITE_DOWNLOADING) || false,
+        enabled: localStorage.getItem(OVERWRITE_DOWNLOADING) === "true" || false,
       },
 
       totalStat: {
