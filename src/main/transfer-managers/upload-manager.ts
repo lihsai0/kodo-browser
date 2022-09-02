@@ -13,6 +13,7 @@ import {Status} from "@common/models/job/types";
 
 import {MAX_MULTIPART_COUNT, MIN_MULTIPART_SIZE} from "./boundary-const";
 import TransferManager, {TransferManagerConfig} from "./transfer-manager";
+import singleFlight from "./single-flight";
 
 // for walk
 interface StatsWithName extends Stats {
@@ -95,7 +96,7 @@ export default class UploadManager extends TransferManager<UploadJob, Config> {
                         //  and in this electron version(nodejs v10.x) read the directory again
                         //  is too waste. so we create later.
                         //  if we are nodejs > v12.12，use opendir API to determine empty.
-                        if (!this.config.isSkipEmptyDirectory) {
+                        if (!this.config.isSkipEmptyDirectory && !directoryToCreate.get(remoteDirectoryKey)) {
                             const remoteDirectoryKey = remoteKey + "/";
                             this.createDirectory(
                                 qiniuClient,
@@ -144,6 +145,11 @@ export default class UploadManager extends TransferManager<UploadJob, Config> {
         },
     ) {
         await client.enter("createFolder", async client => {
+            const flightKey = options.region + options.bucketName + options.key;
+            const isDirectoryExists = await this.isExists(flightKey, client, options);
+            if (isDirectoryExists) {
+                return
+            }
             await client.putObject(
                 options.region,
                 {
@@ -162,6 +168,23 @@ export default class UploadManager extends TransferManager<UploadJob, Config> {
             key: options.key,
         };
     }
+
+    private isExists = singleFlight(async (
+        client: Adapter,
+        options: {
+            region: string,
+            bucketName: string,
+            key: string,
+        }
+    ): Promise<boolean> => {
+        return await client.isExists(
+            options.region,
+            {
+                bucket: options.bucketName,
+                key: options.key,
+            },
+        );
+    });
 
     private createUploadJob(
         from: Required<UploadJob["options"]["from"]>,
