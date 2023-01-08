@@ -618,6 +618,7 @@ const dict: Dictionary = {
         generateFileLinks: {
             title: "ダウンロードリンクのエクスポート",
             description: "次のファイルの外部チェーンがエクスポートされます",
+            hintFiltered: "ファイル名が空のファイルのリンクをエクスポートできない，一部の無効な項目を除去。",
             csvFile: {
                 label: "ファイルの場所をエクスポート：",
                 suffix: "ファイルエクスプローラーでの表示",
@@ -632,6 +633,7 @@ const dict: Dictionary = {
 
         generateFileLink: {
             title: "ダウンロードリンクのエクスポート",
+            emptyFileNameHint: "ファイル名が空のファイルのリンクをエクスポートできない",
         },
 
         uploadConfirm: {

@@ -142,6 +142,10 @@ const GenerateFileLink: React.FC<ModalProps & GenerateFileLinkProps> = ({
             ? <div>
               {translate("common.noObjectSelected")}
             </div>
+            : !memoFileItem.name
+            ? <div>
+              {translate("modals.generateFileLink.emptyFileNameHint")}
+            </div>
             : <GenerateLinkForm
               fileName={memoFileItem.name}
               fileLink={fileLink}

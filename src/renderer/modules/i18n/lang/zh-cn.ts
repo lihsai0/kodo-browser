@@ -618,6 +618,7 @@ const dict: Dictionary = {
     generateFileLinks: {
       title: "导出外链",
       description: "将导出以下文件的外链",
+      hintFiltered: "空名文件不可导出外链，已过滤",
       csvFile: {
         label: "导出文件位置：",
         suffix: "打开文件所在位置",
@@ -632,6 +633,7 @@ const dict: Dictionary = {
 
     generateFileLink: {
       title: "导出外链",
+      emptyFileNameHint: "空名文件不可导出外链",
     },
 
     uploadConfirm: {

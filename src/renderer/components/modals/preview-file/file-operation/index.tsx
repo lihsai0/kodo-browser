@@ -8,6 +8,7 @@ import {DomainAdapter} from "@renderer/modules/qiniu-client-hooks";
 import {OperationDoneRecallFn} from "../../file/types";
 import ChangeStorageClass from "./change-storage-class";
 import GenerateLink from "./generate-link";
+import {useI18n} from "@renderer/modules/i18n";
 
 export enum FileOperationType {
   None = "none",
@@ -42,8 +43,17 @@ const FileOperation: React.FC<FileOperationProps> = ({
   onHideOperation,
   onOperationDone,
 }) => {
+  const {translate} = useI18n();
+
   switch (fileOperationType) {
     case FileOperationType.GenerateLink:
+      if (!fileItem.name) {
+        return (
+          <div className="p-1 text-center">
+            {translate("modals.generateFileLink.emptyFileNameHint")}
+          </div>
+        );
+      }
       return (
         <GenerateLink
           fileItem={fileItem}

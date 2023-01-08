@@ -617,6 +617,7 @@ export default interface Dictionary {
     generateFileLinks: {
       title: string,
       description: string,
+      hintFiltered: string,
       csvFile: {
         label: string,
         suffix: string,
@@ -631,6 +632,7 @@ export default interface Dictionary {
 
     generateFileLink: {
       title: string,
+      emptyFileNameHint: string,
     },
 
     uploadConfirm: {

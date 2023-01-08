@@ -618,6 +618,7 @@ const dict: Dictionary = {
     generateFileLinks: {
       title: "Export Download Links",
       description: "Export download links of the following files:",
+      hintFiltered: "Can't export download link of a file with empty name, filtered.",
       csvFile: {
         label: "Export file location:",
         suffix: "Show File in Directory",
@@ -632,6 +633,7 @@ const dict: Dictionary = {
 
     generateFileLink: {
       title: "Export Download Link",
+      emptyFileNameHint: "Can't export download link of a file with empty name.",
     },
 
     uploadConfirm: {
